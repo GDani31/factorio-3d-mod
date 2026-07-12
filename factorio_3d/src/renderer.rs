@@ -220,6 +220,7 @@ impl Renderer3D {
                 elevated_south: lift(settings::ELEVATED_SOUTH_TILES),
                 wire_lift: lift(settings::WIRE_LIFT_TILES),
                 fps_eye_h: if span_y > 0.5 { 1.7 * 2.0 * plane_scale / span_y } else { 0.05 },
+                sky: crate::sky::color(),
                 hi_grid: hi_grid as f32,
                 tile_affine: &tile_affine,
                 tile_cover: &tile_cover,

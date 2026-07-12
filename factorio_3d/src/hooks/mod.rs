@@ -95,9 +95,10 @@ pub fn install(symbols: &SymbolMap) -> Result<()> {
     entities::install_actors(symbols, base)?;
     frame::install_params(symbols, base)?;
     sprites::install(symbols, base)?;
-    // these two patch functions that are HOT on the game's update thread and
-    // must enable their detours with all other threads suspended
+    // these patch functions that are HOT on the game's update thread and must
+    // enable their detours with all other threads suspended
     rotation::install(symbols, base)?;
     entities::install_directional(symbols, base)?;
+    crate::sky::install(symbols, base)?;
     Ok(())
 }

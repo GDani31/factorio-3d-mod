@@ -60,6 +60,8 @@ pub struct WarpParams<'a> {
     pub wire_lift: f32,
     // first-person eye height in plane units
     pub fps_eye_h: f32,
+    // background/sky color (shown where the tilted canvas doesn't reach)
+    pub sky: [f32; 3],
     pub hi_grid: f32,
     // per hi tile: current-uv -> stamp-uv affine (ax, bx, ay, by)
     pub tile_affine: &'a [[f32; 4]; MAX_HI_SLICES],
@@ -601,7 +603,9 @@ impl WarpPipeline {
             let ground_hi_on = if layers.ground_hi.is_some() && hi_any { 1.0 } else { 0.0 };
             self.write_cb(context, &view_proj, aspect, tex_w, tex_h, p, 0.0, 1.0, ground_hi_on, 0.0);
 
-            context.ClearRenderTargetView(rtv, &[0.0f32, 0.0, 0.0, 0.0]);
+            // clear to the sky color — this is the background the tilted plane
+            // doesn't cover (above the horizon)
+            context.ClearRenderTargetView(rtv, &[p.sky[0], p.sky[1], p.sky[2], 1.0]);
             context.OMSetRenderTargets(Some(&[Some(rtv.clone())]), None);
             let viewport = D3D11_VIEWPORT {
                 TopLeftX: 0.0,

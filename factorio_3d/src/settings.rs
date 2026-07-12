@@ -3,14 +3,15 @@
 // master switch for rendering extra world while tilted (the "horizon boost")
 pub const HORIZON_BOOST: bool = true;
 
-// target world span (tiles, wider axis) when tilted, independent of zoom
-pub const TARGET_SPAN_TILES: f64 = 220.0;
+// target world span (tiles, wider axis) when tilted, independent of zoom.
+// raised for a bigger view — the far field gets blurrier (game LOD wall)
+pub const TARGET_SPAN_TILES: f64 = 300.0;
 
 // cap on the zoom-out boost factor. higher = deeper horizon but blurrier
-pub const MAX_ZOOM_BOOST: f64 = 4.0;
+pub const MAX_ZOOM_BOOST: f64 = 5.0;
 
 // hard cap on the boosted world span (tiles)
-pub const MAX_BOOST_SPAN_TILES: f64 = 400.0;
+pub const MAX_BOOST_SPAN_TILES: f64 = 550.0;
 
 // below this render scale the game switches to simplified zoomed-out sprites,
 // which look bad as billboards — the boost never goes past it
@@ -32,6 +33,19 @@ pub const FLAT_PLATFORM_TILES: f32 = 0.6;
 // agricultural tower crane arm: nudged up and south
 pub const CRANE_LIFT_TILES: f32 = 1.5;
 pub const CRANE_SOUTH_TILES: f32 = 1.0;
+
+// sky (the background the tilted canvas doesn't cover). per planet: day rgb +
+// night rgb; the current darkness (0 day .. 1 night) blends day -> night.
+// planet ids: 0 nauvis, 1 vulcanus, 2 fulgora, 3 gleba, 4 aquilo (else nauvis)
+pub fn sky_day_night(planet: u8) -> ([f32; 3], [f32; 3]) {
+    match planet {
+        1 => ([0.16, 0.09, 0.05], [0.05, 0.03, 0.02]), // vulcanus dark brown
+        2 => ([0.14, 0.06, 0.18], [0.05, 0.02, 0.08]), // fulgora dark purple
+        3 => ([0.10, 0.20, 0.16], [0.03, 0.07, 0.06]), // gleba blue-greenish
+        4 => ([0.06, 0.10, 0.18], [0.02, 0.04, 0.08]), // aquilo dark blue
+        _ => ([0.32, 0.52, 0.85], [0.02, 0.03, 0.07]), // nauvis blue day / dark night
+    }
+}
 
 // height of the wire plane (tiles, roughly pole-connection height)
 pub const WIRE_LIFT_TILES: f32 = 3.8;

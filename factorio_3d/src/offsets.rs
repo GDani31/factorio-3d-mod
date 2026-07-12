@@ -67,6 +67,10 @@ pub const GET_MAP_POSITION: GameFn = f(
     "?getMapPosition@GameView@@QEBA?AVMapPosition@@VPixelPosition@@@Z",
     0x0010E760,
 );
+// GameView::getSurface() -> Surface& (used to detect the current planet)
+pub const GAME_VIEW_GET_SURFACE: GameFn = f("?getSurface@GameView@@QEAAAEAVSurface", 0x0010C1E0);
+// DayTime::getDarkness(double) -> float (0 day .. 1 night)
+pub const DAYTIME_GET_DARKNESS: GameFn = f("?getDarkness@DayTime@@", 0x00B4C9B0);
 
 // --- entity draw methods (bracketed to record their sprites) -----------------
 pub const CHARACTER_DRAW: GameFn = f("?draw@Character@@UEBAXAEAVDrawQueue@@@Z", 0x00373BA0);
@@ -135,6 +139,8 @@ pub const ALL: &[&GameFn] = &[
     &PLACE_SPRITE,
     &COMPUTE_WALK_DIR,
     &GET_MAP_POSITION,
+    &GAME_VIEW_GET_SURFACE,
+    &DAYTIME_GET_DARKNESS,
     &CHARACTER_DRAW,
     &CAR_DRAW,
     &LOCOMOTIVE_DRAW,

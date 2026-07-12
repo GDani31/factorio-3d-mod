@@ -194,7 +194,7 @@ fn hooked_sprite_nway4_draw(
 // these targets are hot on the game's update thread — patching them while a
 // thread runs mid-prologue crashes. inside `f`: no allocation, no logging,
 // no locks (a suspended thread frozen inside malloc would deadlock us)
-pub(super) fn with_other_threads_suspended<R>(f: impl FnOnce() -> R) -> R {
+pub(crate) fn with_other_threads_suspended<R>(f: impl FnOnce() -> R) -> R {
     use windows::Win32::Foundation::CloseHandle;
     use windows::Win32::System::Diagnostics::ToolHelp::{
         CreateToolhelp32Snapshot, TH32CS_SNAPTHREAD, THREADENTRY32, Thread32First, Thread32Next,

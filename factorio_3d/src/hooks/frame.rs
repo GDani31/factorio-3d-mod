@@ -330,6 +330,9 @@ fn hooked_create_rp(
         return out;
     }
 
+    // detect the current planet for the sky color (this = the GameView)
+    crate::sky::detect_planet(this);
+
     // arm the capture EARLY (before this frame's draw queues are built): the
     // boost engaging forces a full re-queue this very frame, and everything
     // queued while capture is off never becomes a billboard

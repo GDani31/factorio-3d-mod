@@ -24,6 +24,7 @@ mod offsets;
 mod picking;
 mod renderer;
 mod settings;
+mod sky;
 mod symbols;
 mod warp;
 
