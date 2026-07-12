@@ -12,6 +12,7 @@ use crate::symbols::SymbolMap;
 use anyhow::Result;
 use retour::static_detour;
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use super::MapPos;
 
@@ -158,8 +159,26 @@ pub fn install(symbols: &SymbolMap, base: usize) -> Result<()> {
 // each one: maybe rotate the orientation argument, maybe retag the layer,
 // remember the layer in a thread-local for the placement hook, pass through
 
+// one-shot probe: logs the layer flying-robot sprites draw at, so we can tell
+// whether they even pass through the DrawQueue hooks (if this never logs, bots
+// use a specialized queue path and need a different diversion)
+static FLY_LAYER_PROBE: AtomicU64 = AtomicU64::new(0);
+
 fn retag(layer: u8) -> u8 {
-    if capture::capture_enabled() { retarget_layer(layer) } else { layer }
+    if !capture::capture_enabled() {
+        return layer;
+    }
+    // flying robots draw on an "air" layer ABOVE the captured object range
+    // (120..133), so they're never diverted into the object capture and stay
+    // flat. force their sprites into the object layer so they billboard.
+    if super::IN_FLY_DRAW.with(|f| f.get()) {
+        let n = FLY_LAYER_PROBE.fetch_add(1, Ordering::Relaxed);
+        if n < 8 {
+            log::info!("[sprites] fly sprite layer {layer} -> forcing into object capture (121)");
+        }
+        return 121;
+    }
+    retarget_layer(layer)
 }
 
 fn with_layer(layer: u8, f: impl FnOnce()) {

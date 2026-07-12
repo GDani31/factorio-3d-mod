@@ -1,20 +1,20 @@
-// factorio_3d — a 3d camera mod for factorio.
+// factorio_3d - a 3d camera mod for factorio.
 //
 // the dll is injected into the running game. it hooks rendering functions
 // (found by name in factorio.pdb) to tilt/rotate the camera, stand buildings
 // up as billboards, and lift belts/rails off the ground.
 //
 // module overview:
-// - settings   – all tunable numbers in one place
-// - offsets    – game-version-specific addresses (update after a game update)
-// - symbols    – looks up game functions in factorio.pdb
-// - camera     – camera state + mouse/keyboard input
-// - picking    – maps the cursor back to the right tile while warped
-// - hooks      – all detours into the game's code
-// - billboards – per-entity sprite rects recorded each frame
-// - capture    – offscreen gpu targets the object/belt layers go into
-// - warp       – the d3d11 pipeline that re-renders the frame in 3d
-// - renderer   – per-frame orchestration
+// - settings   - all tunable numbers in one place
+// - offsets    - game-version-specific addresses (update after a game update)
+// - symbols    - looks up game functions in factorio.pdb
+// - camera     - camera state + mouse/keyboard input
+// - picking    - maps the cursor back to the right tile while warped
+// - hooks      - all detours into the game's code
+// - billboards - per-entity sprite rects recorded each frame
+// - capture    - offscreen gpu targets the object/belt layers go into
+// - warp       - the d3d11 pipeline that re-renders the frame in 3d
+// - renderer   - per-frame orchestration
 
 mod billboards;
 mod camera;

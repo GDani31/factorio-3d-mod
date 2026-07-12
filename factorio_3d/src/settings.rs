@@ -19,10 +19,12 @@ pub const MIN_EFFECTIVE_SCALE: f64 = 0.25;
 // how far belts float above the ground (tiles)
 pub const BELT_LIFT_TILES: f32 = 0.5;
 
-// height of the elevated-rail deck (tiles) and how far south it shifts so the
-// rails sit on top of their pillars (the deck art draws above the pillars)
-pub const ELEVATED_LIFT_TILES: f32 = 4.5;
-pub const ELEVATED_SOUTH_TILES: f32 = 2.0;
+// height of the elevated-rail deck (tiles). must match the height the rail
+// RAMP art rises to (~3 tiles), or the deck disconnects from the ramp tops —
+// a flat plane can't slope, so this is the join point. south shift is 0 for
+// the same reason (shifting the deck slides it off the ramps).
+pub const ELEVATED_LIFT_TILES: f32 = 3.0;
+pub const ELEVATED_SOUTH_TILES: f32 = 0.0;
 
 // solar panels + rocket silo: laid flat, raised onto a low platform this high
 pub const FLAT_PLATFORM_TILES: f32 = 0.6;
