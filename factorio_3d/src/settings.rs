@@ -19,8 +19,13 @@ pub const MIN_EFFECTIVE_SCALE: f64 = 0.25;
 // how far belts float above the ground (tiles)
 pub const BELT_LIFT_TILES: f32 = 0.5;
 
-// height of the elevated-rail deck (tiles)
-pub const ELEVATED_LIFT_TILES: f32 = 3.0;
+// height of the elevated-rail deck (tiles) and how far south it shifts so the
+// rails sit on top of their pillars (the deck art draws above the pillars)
+pub const ELEVATED_LIFT_TILES: f32 = 4.5;
+pub const ELEVATED_SOUTH_TILES: f32 = 2.0;
+
+// solar panels + rocket silo: laid flat, raised onto a low platform this high
+pub const FLAT_PLATFORM_TILES: f32 = 0.6;
 
 // height of the wire plane (tiles, roughly pole-connection height)
 pub const WIRE_LIFT_TILES: f32 = 3.8;

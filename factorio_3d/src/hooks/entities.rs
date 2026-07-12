@@ -29,8 +29,7 @@ static_detour! {
     static SegmentedUnitDrawHook: unsafe extern "C" fn(*mut core::ffi::c_void, *mut core::ffi::c_void);
     static SegmentDrawHook: unsafe extern "C" fn(*mut core::ffi::c_void, *mut core::ffi::c_void);
     static CombatRobotDrawHook: unsafe extern "C" fn(*mut core::ffi::c_void, *mut core::ffi::c_void);
-    static LogisticRobotDrawHook: unsafe extern "C" fn(*mut core::ffi::c_void, *mut core::ffi::c_void);
-    static ConstructionRobotDrawHook: unsafe extern "C" fn(*mut core::ffi::c_void, *mut core::ffi::c_void);
+    static RobotLogisticDrawHook: unsafe extern "C" fn(*mut core::ffi::c_void, *mut core::ffi::c_void);
 }
 
 static_detour! {
@@ -41,6 +40,8 @@ static_detour! {
     static PipeToGroundDrawHook: unsafe extern "C" fn(*mut core::ffi::c_void, *mut core::ffi::c_void);
     static PipeDrawHook: unsafe extern "C" fn(*mut core::ffi::c_void, *mut core::ffi::c_void);
     static ThrusterDrawHook: unsafe extern "C" fn(*mut core::ffi::c_void, *mut core::ffi::c_void);
+    static SolarPanelDrawHook: unsafe extern "C" fn(*mut core::ffi::c_void, *mut core::ffi::c_void);
+    static RocketSiloDrawHook: unsafe extern "C" fn(*mut core::ffi::c_void, *mut core::ffi::c_void);
     static MapSaveHook: unsafe extern "C" fn(*mut core::ffi::c_void, *mut core::ffi::c_void, *mut core::ffi::c_void);
 }
 
@@ -114,9 +115,8 @@ vehicle_draw!(hooked_spider_unit_draw, SpiderUnitDrawHook, true, false);
 vehicle_draw!(hooked_segmented_unit_draw, SegmentedUnitDrawHook, true, false);
 vehicle_draw!(hooked_segment_draw, SegmentDrawHook, true, false);
 vehicle_draw!(hooked_combat_robot_draw, CombatRobotDrawHook, false, true);
-// flying logistic/construction robots
-vehicle_draw!(hooked_logistic_robot_draw, LogisticRobotDrawHook, false, true);
-vehicle_draw!(hooked_construction_robot_draw, ConstructionRobotDrawHook, false, true);
+// logistic + construction bots (one shared base-class draw)
+vehicle_draw!(hooked_robot_logistic_draw, RobotLogisticDrawHook, false, true);
 
 // player + vehicle/unit draw hooks
 pub fn install_actors(symbols: &SymbolMap, base: usize) -> Result<()> {
@@ -126,7 +126,7 @@ pub fn install_actors(symbols: &SymbolMap, base: usize) -> Result<()> {
         CharacterDrawHook.initialize(target, hooked_character_draw)?.enable()?;
     }
 
-    let targets: [(&GameFn, &'static EntityDrawDetour, fn(_, _)); 10] = [
+    let targets: [(&GameFn, &'static EntityDrawDetour, fn(_, _)); 11] = [
         (&offsets::CAR_DRAW, &CarDrawHook, hooked_car_draw as fn(_, _)),
         (&offsets::LOCOMOTIVE_DRAW, &LocomotiveDrawHook, hooked_locomotive_draw),
         (&offsets::CARGO_WAGON_DRAW, &CargoWagonDrawHook, hooked_cargo_wagon_draw),
@@ -137,31 +137,13 @@ pub fn install_actors(symbols: &SymbolMap, base: usize) -> Result<()> {
         (&offsets::SEGMENTED_UNIT_DRAW, &SegmentedUnitDrawHook, hooked_segmented_unit_draw),
         (&offsets::SEGMENT_DRAW, &SegmentDrawHook, hooked_segment_draw),
         (&offsets::COMBAT_ROBOT_DRAW, &CombatRobotDrawHook, hooked_combat_robot_draw),
+        (&offsets::ROBOT_LOGISTIC_DRAW, &RobotLogisticDrawHook, hooked_robot_logistic_draw),
     ];
     for (gf, hook, detour) in targets {
         let addr = super::resolve(symbols, base, gf);
         unsafe {
             let target: FnEntityDraw = std::mem::transmute(addr);
             hook.initialize(target, detour)?.enable()?;
-        }
-    }
-
-    // flying robots: name-only resolve, skip if the symbol is missing (their
-    // rva is unknown, so we must never fall back to a guessed address)
-    let robots: [(&GameFn, &'static EntityDrawDetour, fn(_, _)); 2] = [
-        (&offsets::LOGISTIC_ROBOT_DRAW, &LogisticRobotDrawHook, hooked_logistic_robot_draw),
-        (&offsets::CONSTRUCTION_ROBOT_DRAW, &ConstructionRobotDrawHook, hooked_construction_robot_draw),
-    ];
-    for (gf, hook, detour) in robots {
-        match super::resolve_opt(symbols, gf) {
-            Some(addr) => unsafe {
-                let target: FnEntityDraw = std::mem::transmute(addr);
-                hook.initialize(target, detour)?.enable()?;
-            },
-            None => log::warn!(
-                "robot draw symbol '{}' not in pdb — those bots stay flat (find the real name with pdb-explorer)",
-                gf.symbol
-            ),
         }
     }
     Ok(())
@@ -219,6 +201,21 @@ fn hooked_thruster_draw(this: *mut core::ffi::c_void, queue: *mut core::ffi::c_v
     super::IN_FLAT_DRAW.with(|f| f.set(false));
 }
 
+// solar panels + rocket silo: laid flat AND raised onto a low platform
+macro_rules! flat_elevated_draw {
+    ($hooked:ident, $hook:ident) => {
+        fn $hooked(this: *mut core::ffi::c_void, queue: *mut core::ffi::c_void) {
+            super::IN_FLAT_DRAW.with(|f| f.set(true));
+            super::IN_FLAT_ELEVATED.with(|f| f.set(true));
+            unsafe { $hook.call(this, queue) }
+            super::IN_FLAT_ELEVATED.with(|f| f.set(false));
+            super::IN_FLAT_DRAW.with(|f| f.set(false));
+        }
+    };
+}
+flat_elevated_draw!(hooked_solar_panel_draw, SolarPanelDrawHook);
+flat_elevated_draw!(hooked_rocket_silo_draw, RocketSiloDrawHook);
+
 fn hooked_map_save(
     this: *mut core::ffi::c_void,
     serialiser: *mut core::ffi::c_void,
@@ -232,7 +229,7 @@ fn hooked_map_save(
 // direction-based draw hooks. entity draws are hot on the prepare path, so
 // the detours are enabled with all other threads suspended
 pub fn install_directional(symbols: &SymbolMap, base: usize) -> Result<()> {
-    let targets: [(&GameFn, &'static EntityDrawDetour, fn(_, _)); 7] = [
+    let targets: [(&GameFn, &'static EntityDrawDetour, fn(_, _)); 9] = [
         (&offsets::SPLITTER_DRAW_BASE, &SplitterDrawBaseHook, hooked_splitter_draw_base as fn(_, _)),
         (&offsets::LANE_SPLITTER_DRAW_BASE, &LaneSplitterDrawBaseHook, hooked_lane_splitter_draw_base),
         (&offsets::UG_BELT_DRAW_BASE, &UgBeltDrawBaseHook, hooked_ug_belt_draw_base),
@@ -240,6 +237,8 @@ pub fn install_directional(symbols: &SymbolMap, base: usize) -> Result<()> {
         (&offsets::PIPE_TO_GROUND_DRAW, &PipeToGroundDrawHook, hooked_pipe_to_ground_draw),
         (&offsets::PIPE_DRAW, &PipeDrawHook, hooked_pipe_draw),
         (&offsets::THRUSTER_DRAW, &ThrusterDrawHook, hooked_thruster_draw),
+        (&offsets::SOLAR_PANEL_DRAW, &SolarPanelDrawHook, hooked_solar_panel_draw),
+        (&offsets::ROCKET_SILO_DRAW, &RocketSiloDrawHook, hooked_rocket_silo_draw),
     ];
     for (gf, hook, detour) in &targets {
         let addr = super::resolve(symbols, base, gf);

@@ -52,6 +52,9 @@ pub struct WarpParams<'a> {
     pub plane_scale: f32,
     pub belt_lift: f32,
     pub elevated_lift: f32,
+    // south shift of the elevated-rail deck (plane units), so rails sit on
+    // their pillars instead of floating above them
+    pub elevated_south: f32,
     pub wire_lift: f32,
     // first-person eye height in plane units
     pub fps_eye_h: f32,
@@ -646,13 +649,16 @@ impl WarpPipeline {
                 if p.elevated_lift > 0.0 {
                     context.PSSetShaderResources(0, Some(&[Some(esrv.clone())]));
                     context.OMSetBlendState(&self.premult_blend, Some(&blend_factor), 0xffffffff);
+                    // shift the deck content south so the rails land on the
+                    // pillars (sample further north => display further south)
+                    let vshift = -p.elevated_south / (2.0 * p.plane_scale);
                     const DECK_SLICES: u32 = 3;
                     for i in 1..=DECK_SLICES {
                         let f = i as f32 / DECK_SLICES as f32;
                         let h = p.elevated_lift * (0.92 + 0.08 * f);
                         let tint = 0.4 + 0.6 * f;
                         self.write_cb(
-                            context, &view_proj, aspect, tex_w, tex_h, p, h, tint, 0.0, 0.0,
+                            context, &view_proj, aspect, tex_w, tex_h, p, h, tint, 0.0, vshift,
                         );
                         context.Draw(4, 0);
                     }
@@ -770,7 +776,8 @@ impl WarpPipeline {
                     let fx1 = (bb.u1 - 0.5) * 2.0 * aspect * ps;
                     let fz_t = (0.5 - bb.v_top) * 2.0 * ps;
                     let fz_b = (0.5 - bb.v_base) * 2.0 * ps;
-                    let y = 0.002 * ps;
+                    // just above the ground, plus fly_lift for elevated flats
+                    let y = 0.002 * ps + bb.fly_lift;
                     push(fx0, y, fz_b, bb.u0, bb.v_base, s, uc, foot);
                     push(fx1, y, fz_b, bb.u1, bb.v_base, s, uc, foot);
                     push(fx0, y, fz_t, bb.u0, bb.v_top, s, uc, foot);

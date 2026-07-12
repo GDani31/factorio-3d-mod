@@ -29,6 +29,8 @@ pub struct BbRect {
     pub flat: bool,
     // flying robot: billboard lifted into the air and shifted south
     pub fly: bool,
+    // flat sprite raised onto a low platform (solar panel, rocket silo)
+    pub elevated_flat: bool,
     // view rect (left, top, span_x, span_y in tiles) this rect was placed
     // under — used to remap old rects exactly into the current view
     pub stamp: (f32, f32, f32, f32),

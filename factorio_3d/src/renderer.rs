@@ -215,6 +215,7 @@ impl Renderer3D {
                 plane_scale,
                 belt_lift: lift(settings::BELT_LIFT_TILES),
                 elevated_lift: lift(settings::ELEVATED_LIFT_TILES),
+                elevated_south: lift(settings::ELEVATED_SOUTH_TILES),
                 wire_lift: lift(settings::WIRE_LIFT_TILES),
                 fps_eye_h: if span_y > 0.5 { 1.7 * 2.0 * plane_scale / span_y } else { 0.05 },
                 hi_grid: hi_grid as f32,
@@ -266,9 +267,13 @@ fn build_billboards(
 ) -> Vec<BillboardUv> {
     let batches = crate::billboards::take_batches();
     let (cl, ct, csx, csy) = crate::hooks::frame::view_rect_tiles();
+    // tiles -> plane-unit height for this frame's view
+    let to_plane = |tiles: f32| if csy > 0.5 { tiles * 2.0 * plane_scale / csy } else { 0.0 };
     // flying-robot lift (plane units) + south shift (texture v)
-    let fly_lift = if csy > 0.5 { settings::BOT_LIFT_TILES * 2.0 * plane_scale / csy } else { 0.0 };
+    let fly_lift = to_plane(settings::BOT_LIFT_TILES);
     let bot_south_v = if csy > 0.5 { settings::BOT_SOUTH_TILES / csy } else { 0.0 };
+    // solar panel / rocket silo platform height (plane units)
+    let platform_lift = to_plane(settings::FLAT_PLATFORM_TILES);
     let total: usize = batches.iter().map(|b| b.rects.len()).sum();
     let mut billboards: Vec<BillboardUv> = Vec::with_capacity(total);
 
@@ -506,7 +511,7 @@ fn build_billboards(
                 sel,
                 pu: 0.5 * (u0 + u1),
                 flat: r.flat,
-                fly_lift: 0.0,
+                fly_lift: if r.elevated_flat { platform_lift } else { 0.0 },
             });
         }
     }

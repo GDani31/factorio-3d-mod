@@ -500,6 +500,7 @@ fn hooked_place_sprite(
                 unit: super::IN_UNIT_DRAW.with(|d| d.get()) > 0,
                 flat: super::IN_FLAT_DRAW.with(|f| f.get()),
                 fly: super::IN_FLY_DRAW.with(|f| f.get()),
+                elevated_flat: super::IN_FLAT_ELEVATED.with(|f| f.get()),
                 special: is_player || is_vehicle,
                 grp,
                 stamp: own_stamp,
