@@ -340,6 +340,14 @@ fn build_billboards(
 
         // one quad per mobile entity
         for g in sgroups.values() {
+            // canvas guard: a real player/vehicle/bot is small. if the union
+            // spans most of the frame, a spurious sprite from the game's second
+            // (vanilla-scale) entity pass got merged in by serial — drawing it
+            // would paste the whole frame as the entity ("player replaced with
+            // the canvas"). drop the group instead.
+            if (g.x1 - g.x0) / fw > 0.6 || (g.y1 - g.y0) / fh > 0.6 {
+                continue;
+            }
             let u0 = (g.x0 / fw) * au + bu;
             let u1 = (g.x1 / fw) * au + bu;
             let v_top = (g.y0 / fh) * av + bv;
