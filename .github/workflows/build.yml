@@ -1,0 +1,47 @@
+name: build
+
+on:
+  push:
+    branches: ["main", "master"]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    permissions:
+      contents: write   # needed to create the release
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # rust-toolchain.toml makes rustup pick up nightly automatically
+      - name: cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: build
+        run: cargo build --release
+
+      - name: collect files
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory dist | Out-Null
+          Copy-Item target/release/factorio_3d.dll dist/
+          Copy-Item target/release/inject.exe dist/
+          Compress-Archive dist/* factorio_3d.zip
+
+      # downloadable from the actions run page (needs a github login)
+      - name: upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: factorio_3d
+          path: dist/
+
+      # pushing a tag like v0.2.0 attaches the zip to a public release,
+      # so normal users can download it without an account
+      - name: release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: factorio_3d.zip

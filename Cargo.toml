@@ -1,0 +1,8 @@
+[workspace]
+resolver = "2"
+members = ["factorio_3d", "injector"]
+exclude = ["rivets-rs"]
+
+[profile.release]
+opt-level = 2
+lto = true
