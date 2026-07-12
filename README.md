@@ -5,10 +5,9 @@ a dll that gets injected into factorio (2.0.77, windows, dx11) and turns the fla
 ## controls
 
 - shift + right-drag (or just middle-mouse drag): rotate / tilt the camera
+- shift + scroll in at closest zoom: first person view with mouse lock, holding shift is important here, otherwise you do nowmal zoom. hold ctrl to free the cursor, scroll out to exit
 - shift + scroll: 3d zoom out / back in
 - alt + right-click: snap back to the normal top-down view
-- shift + scroll in at closest zoom: first person — mouse looks around, hold ctrl to free the cursor, scroll out to exit
-- alt + right-click: reset view to top down view.
 
 ## install
 
