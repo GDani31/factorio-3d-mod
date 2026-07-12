@@ -10,7 +10,7 @@ a dll that gets injected into factorio (2.0.77, windows, dx11) and turns the fla
 
 ## install
 
-easy way: grab `factorio_3d.dll` + `inject.exe` from the releases tab. start factorio, load a save, run `inject.exe`. re-inject after every game restart.
+easy way: grab `factorio_3d.dll` + `inject.exe` from the releases tab. start factorio, run `inject.exe`, load a save. re-inject after every game restart.
 
 build it yourself: install rust nightly, then
 
