@@ -12,7 +12,6 @@ use crate::symbols::SymbolMap;
 use anyhow::Result;
 use retour::static_detour;
 use std::sync::Mutex;
-use std::sync::atomic::{AtomicU64, Ordering};
 
 use super::MapPos;
 
@@ -159,23 +158,14 @@ pub fn install(symbols: &SymbolMap, base: usize) -> Result<()> {
 // each one: maybe rotate the orientation argument, maybe retag the layer,
 // remember the layer in a thread-local for the placement hook, pass through
 
-// one-shot probe: logs the layer flying-robot sprites draw at, so we can tell
-// whether they even pass through the DrawQueue hooks (if this never logs, bots
-// use a specialized queue path and need a different diversion)
-static FLY_LAYER_PROBE: AtomicU64 = AtomicU64::new(0);
-
 fn retag(layer: u8) -> u8 {
     if !capture::capture_enabled() {
         return layer;
     }
-    // flying robots draw on an "air" layer ABOVE the captured object range
-    // (120..133), so they're never diverted into the object capture and stay
-    // flat. force their sprites into the object layer so they billboard.
+    // flying-robot sprites that pass through here (shadow/cargo) draw on the
+    // lower-object layer — force them into the object capture so they billboard
+    // with the bot (the body is handled by diverting the air-object range).
     if super::IN_FLY_DRAW.with(|f| f.get()) {
-        let n = FLY_LAYER_PROBE.fetch_add(1, Ordering::Relaxed);
-        if n < 8 {
-            log::info!("[sprites] fly sprite layer {layer} -> forcing into object capture (121)");
-        }
         return 121;
     }
     retarget_layer(layer)
@@ -541,6 +531,11 @@ fn hooked_draw_entities(
         // object / belt / elevated ranges -> their capture targets
         let kind = if (120..133).contains(&from) && to <= 133 {
             Some(CaptureKind::Object)
+        } else if from == 160 && to <= 161 {
+            // air-object layer (flying robot BODIES draw here via a specialized
+            // path) — capture as objects so the bots billboard from their own
+            // pixels instead of sampling the ground under them
+            Some(CaptureKind::Object)
         } else if (155..159).contains(&from) && to <= 159 {
             Some(CaptureKind::Belt)
         } else if (133..153).contains(&from) && to <= 153 {
@@ -597,26 +592,36 @@ fn divert_object_range(
             r += unsafe { DrawEntitiesHook.call(this, queues, *f, *t) };
         }
     }
-    if !any_captured || kind != CaptureKind::Object {
+    if !any_captured {
         return r;
     }
 
-    // hi-res replay: the same object segments once more, into this frame's
-    // rotation tile (one window per call — more windows starve the tiles),
-    // plus the every-frame live tile for moving sprites
+    // hi-res replay: render the captured segments again into this frame's
+    // rotation tile at vanilla sharpness (one window per call — more windows
+    // starve the tiles). so belts/rails/elevated look sharp at any zoom, not
+    // just the objects. object also replays a live tile for moving sprites.
     let b = super::frame::zoom_boost_applied();
-    if b > 1.05 {
-        let grid = capture::hi_grid_for(b);
-        for live in [false, true] {
-            if capture::begin_hi_capture(HiKind::Object, b, grid, live) {
-                for (f, t, k) in &segs {
-                    if *k == CaptureKind::Object {
-                        unsafe { DrawEntitiesHook.call(this, queues, *f, *t) };
-                    }
+    if b <= 1.05 {
+        return r;
+    }
+    let grid = capture::hi_grid_for(b);
+    let hi_kind = match kind {
+        CaptureKind::Object => HiKind::Object,
+        CaptureKind::Belt => HiKind::Belt,
+        CaptureKind::Elevated => HiKind::Elevated,
+        CaptureKind::Wire => return r, // wire plane stays low-res
+    };
+    // object gets a second (live) tile for moving sprites; the rest don't
+    let lives: &[bool] = if kind == CaptureKind::Object { &[false, true] } else { &[false] };
+    for &live in lives {
+        if capture::begin_hi_capture(hi_kind, b, grid, live) {
+            for (f, t, k) in &segs {
+                if *k == kind {
+                    unsafe { DrawEntitiesHook.call(this, queues, *f, *t) };
                 }
-                force_flush_batches();
-                capture::end_hi_capture();
             }
+            force_flush_batches();
+            capture::end_hi_capture();
         }
     }
     r
@@ -661,10 +666,23 @@ fn divert_ground_range(
 
     let b = super::frame::zoom_boost_applied();
     if b > 1.05 {
+        let grid = capture::hi_grid_for(b);
+        // ground (non-belt) hi tile
         force_flush_batches();
-        if capture::begin_hi_capture(HiKind::Ground, b, capture::hi_grid_for(b), false) {
+        if capture::begin_hi_capture(HiKind::Ground, b, grid, false) {
             for (f, t, belt) in &segs {
                 if !*belt {
+                    unsafe { DrawEntitiesHook.call(this, queues, *f, *t) };
+                }
+            }
+            force_flush_batches();
+            capture::end_hi_capture();
+        }
+        // belt/rail hi tile — so floor belts and rails are sharp at any zoom
+        force_flush_batches();
+        if capture::begin_hi_capture(HiKind::Belt, b, grid, false) {
+            for (f, t, belt) in &segs {
+                if *belt {
                     unsafe { DrawEntitiesHook.call(this, queues, *f, *t) };
                 }
             }

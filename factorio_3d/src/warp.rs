@@ -38,7 +38,9 @@ pub struct WarpLayers<'a> {
     pub object_hi: Option<&'a ID3D11ShaderResourceView>,
     pub ground_hi: Option<&'a ID3D11ShaderResourceView>,
     pub belt: Option<&'a ID3D11ShaderResourceView>,
+    pub belt_hi: Option<&'a ID3D11ShaderResourceView>,
     pub elevated: Option<&'a ID3D11ShaderResourceView>,
+    pub elevated_hi: Option<&'a ID3D11ShaderResourceView>,
     pub wire: Option<&'a ID3D11ShaderResourceView>,
 }
 
@@ -626,17 +628,25 @@ impl WarpPipeline {
             let blend_factor = [0.0f32; 4];
 
             // 2. belt plane: a small stack of slices from the ground up to the
-            // lift height, darker at the bottom — a cheap extrusion with edges
+            // lift height, darker at the bottom — a cheap extrusion with edges.
+            // the top slice composites the hi-res belt/rail tiles so belts and
+            // floor rails stay sharp at any zoom; the dark edges stay low-res.
             if let Some(bsrv) = layers.belt {
-                context.PSSetShaderResources(0, Some(&[Some(bsrv.clone())]));
+                // t0 = low-res belt capture, t1 = hi-res belt/rail tiles
+                context.PSSetShaderResources(0, Some(&[Some(bsrv.clone()), layers.belt_hi.cloned()]));
                 context.OMSetBlendState(&self.premult_blend, Some(&blend_factor), 0xffffffff);
                 const BELT_EDGE_SLICES: u32 = 3;
                 for i in 1..=BELT_EDGE_SLICES {
                     let f = i as f32 / BELT_EDGE_SLICES as f32;
                     let tint = 0.35 + 0.65 * f;
+                    let hi_on = if i == BELT_EDGE_SLICES && layers.belt_hi.is_some() && hi_any {
+                        1.0
+                    } else {
+                        0.0
+                    };
                     self.write_cb(
                         context, &view_proj, aspect, tex_w, tex_h, p,
-                        p.belt_lift * f, tint, 0.0, 0.0,
+                        p.belt_lift * f, tint, hi_on, 0.0,
                     );
                     context.Draw(4, 0);
                 }
@@ -647,7 +657,11 @@ impl WarpPipeline {
             // it reads as a thin platform, not a wall down to the ground
             if let Some(esrv) = layers.elevated {
                 if p.elevated_lift > 0.0 {
-                    context.PSSetShaderResources(0, Some(&[Some(esrv.clone())]));
+                    // t0 = low-res elevated capture, t1 = hi-res elevated tiles
+                    context.PSSetShaderResources(
+                        0,
+                        Some(&[Some(esrv.clone()), layers.elevated_hi.cloned()]),
+                    );
                     context.OMSetBlendState(&self.premult_blend, Some(&blend_factor), 0xffffffff);
                     // shift the deck content south so the rails land on the
                     // pillars (sample further north => display further south)
@@ -657,8 +671,13 @@ impl WarpPipeline {
                         let f = i as f32 / DECK_SLICES as f32;
                         let h = p.elevated_lift * (0.92 + 0.08 * f);
                         let tint = 0.4 + 0.6 * f;
+                        let hi_on = if i == DECK_SLICES && layers.elevated_hi.is_some() && hi_any {
+                            1.0
+                        } else {
+                            0.0
+                        };
                         self.write_cb(
-                            context, &view_proj, aspect, tex_w, tex_h, p, h, tint, 0.0, vshift,
+                            context, &view_proj, aspect, tex_w, tex_h, p, h, tint, hi_on, vshift,
                         );
                         context.Draw(4, 0);
                     }

@@ -65,6 +65,8 @@ pub enum CaptureKind {
 pub enum HiKind {
     Object,
     Ground,
+    Belt,
+    Elevated,
 }
 
 // hi-res targets are this many times the fbo size per axis. pinned at 2.0 —
@@ -137,6 +139,8 @@ struct Capture {
     wire: Option<Target>,
     object_hi: Option<HiTarget>,
     ground_hi: Option<HiTarget>,
+    belt_hi: Option<HiTarget>,
+    elevated_hi: Option<HiTarget>,
     hi_grid: u32,
     // world fbo bindings saved across one diverted call
     saved_rtv: Option<ID3D11RenderTargetView>,
@@ -309,6 +313,8 @@ pub fn init(device: ID3D11Device, context: ID3D11DeviceContext) {
         wire: None,
         object_hi: None,
         ground_hi: None,
+        belt_hi: None,
+        elevated_hi: None,
         hi_grid: 1,
         saved_rtv: None,
         saved_dsv: None,
@@ -477,16 +483,18 @@ pub fn begin_hi_capture(kind: HiKind, boost: f32, grid: u32, live: bool) -> bool
         let hw = desc.Width * HI_SUPER as u32;
         let hh = desc.Height * HI_SUPER as u32;
         // full slice set always allocated, so grid flips never reallocate.
-        // the object target carries one extra slice: the live tile
+        // only the object target carries the extra live slice (moving sprites)
         let slices = match kind {
             HiKind::Object => MAX_HI_SLICES as u32,
-            HiKind::Ground => MAX_HI_TILES as u32,
+            _ => MAX_HI_TILES as u32,
         };
         {
-            let Capture { device, object_hi, ground_hi, .. } = cap;
+            let Capture { device, object_hi, ground_hi, belt_hi, elevated_hi, .. } = cap;
             let (slot, label) = match kind {
                 HiKind::Object => (object_hi, "object-hi"),
                 HiKind::Ground => (ground_hi, "ground-hi"),
+                HiKind::Belt => (belt_hi, "belt-hi"),
+                HiKind::Elevated => (elevated_hi, "elevated-hi"),
             };
             if !ensure_hi_slot(device, slot, label, hw, hh, slices, desc.Format) {
                 return false;
@@ -496,6 +504,8 @@ pub fn begin_hi_capture(kind: HiKind, boost: f32, grid: u32, live: bool) -> bool
         let target = match kind {
             HiKind::Object => cap.object_hi.as_mut().unwrap(),
             HiKind::Ground => cap.ground_hi.as_mut().unwrap(),
+            HiKind::Belt => cap.belt_hi.as_mut().unwrap(),
+            HiKind::Elevated => cap.elevated_hi.as_mut().unwrap(),
         };
         if live && kind != HiKind::Object {
             return false;
@@ -626,6 +636,8 @@ pub fn end_hi_capture() {
         let target = match cap.hi_window.take() {
             Some(HiKind::Object) => cap.object_hi.as_mut(),
             Some(HiKind::Ground) => cap.ground_hi.as_mut(),
+            Some(HiKind::Belt) => cap.belt_hi.as_mut(),
+            Some(HiKind::Elevated) => cap.elevated_hi.as_mut(),
             None => None,
         };
         if let Some(t) = target {
@@ -640,6 +652,8 @@ pub struct FrameCapture {
     // Texture2DArray srvs, one slice per hi tile (validity lives in hi_meta)
     pub object_hi: Option<ID3D11ShaderResourceView>,
     pub ground_hi: Option<ID3D11ShaderResourceView>,
+    pub belt_hi: Option<ID3D11ShaderResourceView>,
+    pub elevated_hi: Option<ID3D11ShaderResourceView>,
     pub hi_grid: u32,
     pub hi_meta: [HiTileMeta; MAX_HI_SLICES],
     pub belt: Option<ID3D11ShaderResourceView>,
@@ -670,6 +684,8 @@ pub fn take_frame_capture() -> Option<FrameCapture> {
         object: None,
         object_hi: None,
         ground_hi: None,
+        belt_hi: None,
+        elevated_hi: None,
         hi_grid: cap.hi_grid.max(1),
         hi_meta: HI_TILE_META
             .lock()
@@ -704,15 +720,21 @@ pub fn take_frame_capture() -> Option<FrameCapture> {
         }
     }
     // hi tiles are temporal: srvs are useful whenever the targets exist
-    for (t, is_object) in [(cap.object_hi.as_mut(), true), (cap.ground_hi.as_mut(), false)] {
+    for (t, slot) in [
+        (cap.object_hi.as_mut(), 0usize),
+        (cap.ground_hi.as_mut(), 1),
+        (cap.belt_hi.as_mut(), 2),
+        (cap.elevated_hi.as_mut(), 3),
+    ] {
         if let Some(t) = t {
             t.cleared = false;
             t.live_cleared = false;
             t.captured = false;
-            if is_object {
-                result.object_hi = Some(t.srv.clone());
-            } else {
-                result.ground_hi = Some(t.srv.clone());
+            match slot {
+                0 => result.object_hi = Some(t.srv.clone()),
+                1 => result.ground_hi = Some(t.srv.clone()),
+                2 => result.belt_hi = Some(t.srv.clone()),
+                _ => result.elevated_hi = Some(t.srv.clone()),
             }
         }
     }

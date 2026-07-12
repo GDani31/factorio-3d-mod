@@ -155,7 +155,9 @@ impl Renderer3D {
                 object_hi: matching.and_then(|c| c.object_hi.as_ref()),
                 ground_hi: matching.and_then(|c| c.ground_hi.as_ref()),
                 belt: matching.and_then(|c| c.belt.as_ref()),
+                belt_hi: matching.and_then(|c| c.belt_hi.as_ref()),
                 elevated: matching.and_then(|c| c.elevated.as_ref()),
+                elevated_hi: matching.and_then(|c| c.elevated_hi.as_ref()),
                 wire: matching.and_then(|c| c.wire.as_ref()),
             };
 
