@@ -8,11 +8,12 @@
 use crate::offsets;
 use crate::symbols::SymbolMap;
 use anyhow::Result;
-use retour::static_detour;
 use std::sync::atomic::{AtomicU8, AtomicU32, AtomicUsize, Ordering};
 
-// darkness 0(day)..1(night), f32 bits
+// darkness 0(day)..1(night), f32 bits — written by the naked shim below
 static DARKNESS: AtomicU32 = AtomicU32::new(0);
+// trampoline (original getDarkness) address for the shim to call
+static DARKNESS_TRAMP: AtomicUsize = AtomicUsize::new(0);
 // detected planet id (see settings::sky_day_night); 0 = nauvis default
 static PLANET: AtomicU8 = AtomicU8::new(0);
 // resolved GameView::getSurface address
@@ -20,11 +21,25 @@ static GET_SURFACE: AtomicUsize = AtomicUsize::new(0);
 // last surface we classified, to skip re-scanning every frame
 static LAST_SURFACE: AtomicUsize = AtomicUsize::new(0);
 
-type FnGetDarkness = unsafe extern "C" fn(*mut core::ffi::c_void, f64) -> f32;
 type FnGetSurface = unsafe extern "C" fn(*mut core::ffi::c_void) -> *mut core::ffi::c_void;
 
-static_detour! {
-    static GetDarknessHook: unsafe extern "C" fn(*mut core::ffi::c_void, f64) -> f32;
+// DayTime::getDarkness is a small leaf function; its callers (e.g.
+// EnemySpawner::spawnEnemies) keep live values in volatile registers across
+// the call under whole-program optimization, so a normal detour corrupts them
+// and crashes. this naked shim just calls the original and copies the float
+// return (xmm0) into DARKNESS — it touches only rsp, so callers see exactly
+// the original's register effects.
+#[unsafe(naked)]
+unsafe extern "C" fn darkness_shim() {
+    core::arch::naked_asm!(
+        "sub rsp, 0x28", // shadow space + 16-byte align for the call
+        "call qword ptr [rip + {tramp}]",
+        "movss dword ptr [rip + {slot}], xmm0",
+        "add rsp, 0x28",
+        "ret",
+        tramp = sym DARKNESS_TRAMP,
+        slot = sym DARKNESS,
+    )
 }
 
 pub fn darkness() -> f32 {
@@ -46,29 +61,24 @@ pub fn color() -> [f32; 3] {
     ]
 }
 
-fn hooked_get_darkness(this: *mut core::ffi::c_void, t: f64) -> f32 {
-    let d = unsafe { GetDarknessHook.call(this, t) };
-    if d.is_finite() {
-        DARKNESS.store(d.clamp(0.0, 1.0).to_bits(), Ordering::Relaxed);
-    }
-    d
-}
-
 pub fn install(symbols: &SymbolMap, base: usize) -> Result<()> {
     GET_SURFACE.store(
         crate::hooks::resolve(symbols, base, &offsets::GAME_VIEW_GET_SURFACE),
         Ordering::Relaxed,
     );
 
+    // raw detour onto the register-preserving shim (never a normal detour —
+    // this is a leaf function hot on the update thread)
     let addr = crate::hooks::resolve(symbols, base, &offsets::DAYTIME_GET_DARKNESS);
-    unsafe {
-        let target: FnGetDarkness = std::mem::transmute(addr);
-        GetDarknessHook.initialize(target, hooked_get_darkness)?;
-    }
-    // getDarkness can run on the update thread — enable it with the other
-    // threads suspended so the patch isn't written under a live execution
-    crate::hooks::rotation::with_other_threads_suspended(|| unsafe { GetDarknessHook.enable() })?;
-    log::info!("DayTime::getDarkness hook installed (day/night sky)");
+    let det = unsafe {
+        retour::RawDetour::new(addr as *const (), darkness_shim as *const ())?
+    };
+    DARKNESS_TRAMP.store(det.trampoline() as *const _ as usize, Ordering::SeqCst);
+    // enable with the other threads suspended so the patch isn't written under
+    // a live execution of the prologue
+    crate::hooks::rotation::with_other_threads_suspended(|| unsafe { det.enable() })?;
+    std::mem::forget(det); // must live for the process lifetime
+    log::info!("DayTime::getDarkness shim-hook installed (day/night sky)");
     Ok(())
 }
 
