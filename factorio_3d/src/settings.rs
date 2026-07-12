@@ -29,6 +29,10 @@ pub const ELEVATED_SOUTH_TILES: f32 = 0.0;
 // solar panels + rocket silo: laid flat, raised onto a low platform this high
 pub const FLAT_PLATFORM_TILES: f32 = 0.6;
 
+// agricultural tower crane arm: nudged up and south
+pub const CRANE_LIFT_TILES: f32 = 1.5;
+pub const CRANE_SOUTH_TILES: f32 = 1.0;
+
 // height of the wire plane (tiles, roughly pole-connection height)
 pub const WIRE_LIFT_TILES: f32 = 3.8;
 

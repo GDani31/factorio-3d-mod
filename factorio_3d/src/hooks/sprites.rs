@@ -168,6 +168,10 @@ fn retag(layer: u8) -> u8 {
     if super::IN_FLY_DRAW.with(|f| f.get()) {
         return 121;
     }
+    // crane arm sprites forced into the object capture so they're hi-res
+    if super::IN_CRANE_DRAW.with(|f| f.get()) {
+        return 121;
+    }
     retarget_layer(layer)
 }
 
@@ -510,6 +514,7 @@ fn hooked_place_sprite(
                 flat: super::IN_FLAT_DRAW.with(|f| f.get()),
                 fly: super::IN_FLY_DRAW.with(|f| f.get()),
                 elevated_flat: super::IN_FLAT_ELEVATED.with(|f| f.get()),
+                crane: super::IN_CRANE_DRAW.with(|f| f.get()),
                 special: is_player || is_vehicle,
                 grp,
                 stamp: own_stamp,

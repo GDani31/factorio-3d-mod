@@ -52,6 +52,8 @@ thread_local! {
     pub static IN_FLY_DRAW: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     // flat sprites that also sit on a low raised platform (solar panel, silo)
     pub static IN_FLAT_ELEVATED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    // agricultural tower crane arm sprites (lifted up + shifted south)
+    pub static IN_CRANE_DRAW: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     // depth counter while an enemy/unit draw runs (screen-bottom anchored)
     pub static IN_UNIT_DRAW: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
     // depth counter for static direction-based entity draws (splitter,

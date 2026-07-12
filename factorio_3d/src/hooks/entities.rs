@@ -32,6 +32,12 @@ static_detour! {
     static RobotLogisticDrawHook: unsafe extern "C" fn(*mut core::ffi::c_void, *mut core::ffi::c_void);
 }
 
+// AgriculturalCrane::draw(DrawQueue&, NamedBool<GhostModeTag>) — the ghost flag
+// is a 1-byte struct passed in R8B
+static_detour! {
+    static CraneDrawHook: unsafe extern "C" fn(*mut core::ffi::c_void, *mut core::ffi::c_void, u8);
+}
+
 static_detour! {
     static SplitterDrawBaseHook: unsafe extern "C" fn(*mut core::ffi::c_void, *mut core::ffi::c_void);
     static LaneSplitterDrawBaseHook: unsafe extern "C" fn(*mut core::ffi::c_void, *mut core::ffi::c_void);
@@ -118,12 +124,26 @@ vehicle_draw!(hooked_combat_robot_draw, CombatRobotDrawHook, false, true);
 // logistic + construction bots (one shared base-class draw)
 vehicle_draw!(hooked_robot_logistic_draw, RobotLogisticDrawHook, false, true);
 
+// crane arm: tag its sprites (forced hi-res + lifted/south in the renderer)
+fn hooked_crane_draw(this: *mut core::ffi::c_void, queue: *mut core::ffi::c_void, ghost: u8) {
+    super::IN_CRANE_DRAW.with(|f| f.set(true));
+    unsafe { CraneDrawHook.call(this, queue, ghost) }
+    super::IN_CRANE_DRAW.with(|f| f.set(false));
+}
+
 // player + vehicle/unit draw hooks
 pub fn install_actors(symbols: &SymbolMap, base: usize) -> Result<()> {
     let addr = super::resolve(symbols, base, &offsets::CHARACTER_DRAW);
     unsafe {
         let target: FnEntityDraw = std::mem::transmute(addr);
         CharacterDrawHook.initialize(target, hooked_character_draw)?.enable()?;
+    }
+
+    let addr = super::resolve(symbols, base, &offsets::AGRICULTURAL_CRANE_DRAW);
+    unsafe {
+        let target: unsafe extern "C" fn(*mut core::ffi::c_void, *mut core::ffi::c_void, u8) =
+            std::mem::transmute(addr);
+        CraneDrawHook.initialize(target, hooked_crane_draw)?.enable()?;
     }
 
     let targets: [(&GameFn, &'static EntityDrawDetour, fn(_, _)); 11] = [

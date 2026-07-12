@@ -276,6 +276,9 @@ fn build_billboards(
     let bot_south_v = if csy > 0.5 { settings::BOT_SOUTH_TILES / csy } else { 0.0 };
     // solar panel / rocket silo platform height (plane units)
     let platform_lift = to_plane(settings::FLAT_PLATFORM_TILES);
+    // agricultural tower crane: lift (plane units) + south shift (texture v)
+    let crane_lift = to_plane(settings::CRANE_LIFT_TILES);
+    let crane_south_v = if csy > 0.5 { settings::CRANE_SOUTH_TILES / csy } else { 0.0 };
     let total: usize = batches.iter().map(|b| b.rects.len()).sum();
     let mut billboards: Vec<BillboardUv> = Vec::with_capacity(total);
 
@@ -467,6 +470,36 @@ fn build_billboards(
             let v_top = ((r.cy - r.hh) / fh) * av + bv;
             let v_base = ((r.cy + r.hh) / fh) * av + bv;
             if u1 <= 0.0 || u0 >= 1.0 || v_base <= 0.02 || v_top >= 1.0 {
+                continue;
+            }
+            // crane arm: anchor at its own bottom, shifted south and lifted up,
+            // sampling the hi-res object tile like other static parts
+            if r.crane {
+                let v_foot = (((r.cy + r.hh) / fh) * av + bv + crane_south_v).clamp(0.0, 1.0);
+                if v_foot <= 0.02 {
+                    continue;
+                }
+                let sel = if !hi_ok {
+                    -1.0
+                } else {
+                    let g = hi_grid as f32;
+                    let ug = (r.cx / fw) * au + bu;
+                    let tx = (ug * g).floor().clamp(0.0, g - 1.0);
+                    let ty = (v_foot * g).floor().clamp(0.0, g - 1.0);
+                    let ti = (ty as u32 * hi_grid + tx as u32) as usize;
+                    if tile_cover[ti] > 0.01 { ti as f32 } else { -1.0 }
+                };
+                billboards.push(BillboardUv {
+                    u0,
+                    u1,
+                    v_top,
+                    v_base,
+                    v_foot,
+                    sel,
+                    pu: 0.5 * (u0 + u1),
+                    flat: false,
+                    fly_lift: crane_lift,
+                });
                 continue;
             }
             // anchor at the entity's grouped feet — except elongated entities

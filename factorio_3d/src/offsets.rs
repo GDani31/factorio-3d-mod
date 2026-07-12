@@ -92,6 +92,10 @@ pub const ROBOT_LOGISTIC_DRAW: GameFn =
 pub const SOLAR_PANEL_DRAW: GameFn = f("?draw@SolarPanel@@UEBAXAEAVDrawQueue@@@Z", 0x00503250);
 pub const ROCKET_SILO_DRAW: GameFn = f("?draw@RocketSilo@@UEBAXAEAVDrawQueue@@@Z", 0x004DEB80);
 
+// the agricultural tower's crane arm (drawn by the tower). moved up + south
+// and forced hi-res.
+pub const AGRICULTURAL_CRANE_DRAW: GameFn = f("?draw@AgriculturalCrane@@QEBAX", 0x00301230);
+
 // --- direction-based entity draws (direction byte rotated during draw) -------
 pub const SPLITTER_DRAW_BASE: GameFn = f("?drawBase@Splitter@@", 0x00528CE0);
 pub const LANE_SPLITTER_DRAW_BASE: GameFn = f("?drawBase@LaneSplitter@@", 0x0044E490);
@@ -145,6 +149,7 @@ pub const ALL: &[&GameFn] = &[
     &ROBOT_LOGISTIC_DRAW,
     &SOLAR_PANEL_DRAW,
     &ROCKET_SILO_DRAW,
+    &AGRICULTURAL_CRANE_DRAW,
     &THRUSTER_DRAW,
     &SPLITTER_DRAW_BASE,
     &LANE_SPLITTER_DRAW_BASE,
