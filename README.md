@@ -8,6 +8,7 @@ a dll that gets injected into factorio (2.0.77, windows, dx11) and turns the fla
 - shift + scroll: 3d zoom out / back in
 - alt + right-click: snap back to the normal top-down view
 - shift + scroll in at closest zoom: first person — mouse looks around, hold ctrl to free the cursor, scroll out to exit
+- alt + right-click: reset view to top down view.
 
 ## install
 
