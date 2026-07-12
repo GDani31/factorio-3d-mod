@@ -331,10 +331,9 @@ fn hooked_draw_shifted_rot_precise(
     });
 }
 
-// inserter arms and similar rotated sprites. inside a static entity draw
-// they render flat (the arm sweeps in a horizontal plane; standing it up
-// looked wrong) with a vanilla orientation — the geometric ground rotation
-// replaces the frame rotation there
+// inserter arms (and similar rotated sprites): stand up as billboards AND
+// rotate the orientation so the arm faces the camera — same treatment as the
+// other rotated draw paths. (they used to be forced flat, which read wrong.)
 pub(super) fn hooked_draw_scaled_rotated(
     this: *mut core::ffi::c_void,
     sprite: *const core::ffi::c_void,
@@ -347,23 +346,37 @@ pub(super) fn hooked_draw_scaled_rotated(
     vec: *const core::ffi::c_void,
     sub: i8,
 ) {
-    let in_static = super::STATIC_DRAW_DEPTH.with(|d| d.get()) > 0;
-    let (rot, use_rot) =
-        if in_static { (0.0, false) } else { rotated_arg_for(orientation, layer) };
+    // rotate directly (not layer-gated): this path is the arm, and we always
+    // want it to turn with the camera while the 3d view is on
+    let (rot, use_rot) = yaw_rotation(orientation);
     let ori = if use_rot { &rot as *const f32 } else { orientation };
     let layer = retag(layer);
     super::CURRENT_DRAW_LAYER.with(|c| c.set(layer));
-    if in_static {
-        super::IN_FLAT_DRAW.with(|f| f.set(true));
-    }
     unsafe {
         super::rotation::DrawScaledRotatedHook
             .call(this, sprite, pos, ori, sx, sy, flags, layer, vec, sub)
     };
-    if in_static {
-        super::IN_FLAT_DRAW.with(|f| f.set(false));
-    }
     super::CURRENT_DRAW_LAYER.with(|c| c.set(255));
+}
+
+// camera-yaw rotation of an orientation argument, independent of layer —
+// used by the arm path (gated only on capture + a non-zero yaw)
+fn yaw_rotation(orientation: *const f32) -> (f32, bool) {
+    if orientation.is_null() || !capture::capture_enabled() {
+        return (0.0, false);
+    }
+    let (yaw, _p, _z) = crate::camera::get();
+    if yaw.abs() <= 1.0 {
+        return (0.0, false);
+    }
+    let o = unsafe { *orientation };
+    if !o.is_finite() {
+        return (0.0, false);
+    }
+    (
+        (o + (crate::settings::CHAR_ROT_SIGN as f32) * yaw / 360.0).rem_euclid(1.0),
+        true,
+    )
 }
 
 // --- placement hook: record billboard rects --------------------------------
@@ -486,6 +499,7 @@ fn hooked_place_sprite(
                 player: is_player,
                 unit: super::IN_UNIT_DRAW.with(|d| d.get()) > 0,
                 flat: super::IN_FLAT_DRAW.with(|f| f.get()),
+                fly: super::IN_FLY_DRAW.with(|f| f.get()),
                 special: is_player || is_vehicle,
                 grp,
                 stamp: own_stamp,

@@ -199,6 +199,7 @@ impl Renderer3D {
                     hi_ok,
                     &tile_cover,
                     yaw,
+                    plane_scale,
                 );
             }
 
@@ -239,6 +240,7 @@ struct SpecialGroup {
     player: bool,
     unit: bool,
     flat: bool,
+    fly: bool,
 }
 
 // per-entity feet for static entities: the lowest screen-bottom among the
@@ -260,9 +262,13 @@ fn build_billboards(
     hi_ok: bool,
     tile_cover: &[f32; MAX_HI_SLICES],
     yaw: f32,
+    plane_scale: f32,
 ) -> Vec<BillboardUv> {
     let batches = crate::billboards::take_batches();
     let (cl, ct, csx, csy) = crate::hooks::frame::view_rect_tiles();
+    // flying-robot lift (plane units) + south shift (texture v)
+    let fly_lift = if csy > 0.5 { settings::BOT_LIFT_TILES * 2.0 * plane_scale / csy } else { 0.0 };
+    let bot_south_v = if csy > 0.5 { settings::BOT_SOUTH_TILES / csy } else { 0.0 };
     let total: usize = batches.iter().map(|b| b.rects.len()).sum();
     let mut billboards: Vec<BillboardUv> = Vec::with_capacity(total);
 
@@ -311,6 +317,7 @@ fn build_billboards(
                 player: r.player,
                 unit: r.unit,
                 flat: r.flat,
+                fly: r.fly,
             });
             e.x0 = e.x0.min(r.cx - r.hw);
             e.x1 = e.x1.max(r.cx + r.hw);
@@ -323,6 +330,7 @@ fn build_billboards(
             e.player |= r.player;
             e.unit |= r.unit;
             e.flat |= r.flat;
+            e.fly |= r.fly;
         }
 
         // one quad per mobile entity
@@ -352,10 +360,14 @@ fn build_billboards(
                     sel: -1.0,
                     pu: 0.5 * (u0 + u1),
                     flat: true,
+                    fly_lift: 0.0,
                 });
                 continue;
             }
-            let (pu, v_foot) = if g.player || g.unit {
+            let (pu, v_foot) = if g.fly {
+                // flying robots: screen-bottom anchor shifted south
+                (0.5 * (u0 + u1), (v_base + bot_south_v).clamp(0.0, 1.0))
+            } else if g.player || g.unit {
                 // player + enemies: screen-bottom anchor (compact bodies)
                 (0.5 * (u0 + u1), v_base.clamp(0.0, 1.0))
             } else if csx > 0.1 && csy > 0.1 {
@@ -378,7 +390,17 @@ fn build_billboards(
                     -1.0
                 }
             };
-            billboards.push(BillboardUv { u0, u1, v_top, v_base, v_foot, sel, pu, flat: false });
+            billboards.push(BillboardUv {
+                u0,
+                u1,
+                v_top,
+                v_base,
+                v_foot,
+                sel,
+                pu,
+                flat: false,
+                fly_lift: if g.fly { fly_lift } else { 0.0 },
+            });
         }
 
         // static entities: group parts by (clustered) map position so all
@@ -484,6 +506,7 @@ fn build_billboards(
                 sel,
                 pu: 0.5 * (u0 + u1),
                 flat: r.flat,
+                fly_lift: 0.0,
             });
         }
     }

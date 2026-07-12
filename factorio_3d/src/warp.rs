@@ -28,6 +28,8 @@ pub struct BillboardUv {
     pub pu: f32,
     // lay flat on the ground instead of standing up
     pub flat: bool,
+    // extra height above the ground in plane units (flying robots; 0 = normal)
+    pub fly_lift: f32,
 }
 
 // textures captured this frame, passed to the warp
@@ -780,9 +782,10 @@ impl WarpPipeline {
                 let gx = (uc - 0.5) * 2.0 * aspect * ps;
                 let gz = (0.5 - foot) * 2.0 * ps;
                 let hw = 0.5 * (bb.u1 - bb.u0) * 2.0 * aspect * ps;
-                // heights of the sprite's bottom/top edges above the feet
-                let y_base = (foot - bb.v_base) * 2.0 * ps * STAND_SCALE;
-                let y_top = (foot - bb.v_top) * 2.0 * ps * STAND_SCALE;
+                // heights of the sprite's bottom/top edges above the feet,
+                // plus fly_lift so flying robots hover off the ground
+                let y_base = (foot - bb.v_base) * 2.0 * ps * STAND_SCALE + bb.fly_lift;
+                let y_top = (foot - bb.v_top) * 2.0 * ps * STAND_SCALE + bb.fly_lift;
                 let (lx, lz) = (gx - wdx * hw, gz - wdz * hw);
                 let (rx, rz) = (gx + wdx * hw, gz + wdz * hw);
                 push(lx, y_base, lz, bb.u0, bb.v_base, s, uc, foot);

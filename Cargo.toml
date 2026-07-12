@@ -1,7 +1,8 @@
 [workspace]
 resolver = "2"
 members = ["factorio_3d", "injector"]
-exclude = ["rivets-rs"]
+# dev tool, built on its own when needed (not part of the mod build)
+exclude = ["tools/pdb-explorer"]
 
 [profile.release]
 opt-level = 2

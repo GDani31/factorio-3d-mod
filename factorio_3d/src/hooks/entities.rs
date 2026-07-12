@@ -29,6 +29,8 @@ static_detour! {
     static SegmentedUnitDrawHook: unsafe extern "C" fn(*mut core::ffi::c_void, *mut core::ffi::c_void);
     static SegmentDrawHook: unsafe extern "C" fn(*mut core::ffi::c_void, *mut core::ffi::c_void);
     static CombatRobotDrawHook: unsafe extern "C" fn(*mut core::ffi::c_void, *mut core::ffi::c_void);
+    static LogisticRobotDrawHook: unsafe extern "C" fn(*mut core::ffi::c_void, *mut core::ffi::c_void);
+    static ConstructionRobotDrawHook: unsafe extern "C" fn(*mut core::ffi::c_void, *mut core::ffi::c_void);
 }
 
 static_detour! {
@@ -62,12 +64,17 @@ fn hooked_character_draw(this: *mut core::ffi::c_void, queue: *mut core::ffi::c_
 // --- vehicles / units ----------------------------------------------------------------
 
 // bracket a vehicle/unit draw with the entity-depth counter and one serial
-// per outermost call (subclasses call their base's draw — both are hooked)
+// per outermost call (subclasses call their base's draw — both are hooked).
+// $unit = screen-bottom anchored (compact bodies); $fly = flying robot
+// (lifted + shifted south).
 macro_rules! vehicle_draw {
-    ($hooked:ident, $hook:ident, $unit:expr) => {
+    ($hooked:ident, $hook:ident, $unit:expr, $fly:expr) => {
         fn $hooked(this: *mut core::ffi::c_void, queue: *mut core::ffi::c_void) {
             if $unit {
                 super::IN_UNIT_DRAW.with(|d| d.set(d.get() + 1));
+            }
+            if $fly {
+                super::IN_FLY_DRAW.with(|f| f.set(true));
             }
             let depth = super::ENTITY_DRAW_DEPTH.with(|d| {
                 let v = d.get();
@@ -86,6 +93,9 @@ macro_rules! vehicle_draw {
                     super::ENTITY_DRAW_SERIAL.with(|c| c.set(0));
                 }
             });
+            if $fly {
+                super::IN_FLY_DRAW.with(|f| f.set(false));
+            }
             if $unit {
                 super::IN_UNIT_DRAW.with(|d| d.set(d.get().saturating_sub(1)));
             }
@@ -93,17 +103,20 @@ macro_rules! vehicle_draw {
     };
 }
 
-vehicle_draw!(hooked_car_draw, CarDrawHook, false);
-vehicle_draw!(hooked_locomotive_draw, LocomotiveDrawHook, false);
-vehicle_draw!(hooked_cargo_wagon_draw, CargoWagonDrawHook, false);
-vehicle_draw!(hooked_rolling_stock_draw, RollingStockDrawHook, false);
-vehicle_draw!(hooked_spider_vehicle_draw, SpiderVehicleDrawHook, false);
+vehicle_draw!(hooked_car_draw, CarDrawHook, false, false);
+vehicle_draw!(hooked_locomotive_draw, LocomotiveDrawHook, false, false);
+vehicle_draw!(hooked_cargo_wagon_draw, CargoWagonDrawHook, false, false);
+vehicle_draw!(hooked_rolling_stock_draw, RollingStockDrawHook, false, false);
+vehicle_draw!(hooked_spider_vehicle_draw, SpiderVehicleDrawHook, false, false);
 // enemies/units anchor at their screen bottom (compact bodies)
-vehicle_draw!(hooked_unit_draw, UnitDrawHook, true);
-vehicle_draw!(hooked_spider_unit_draw, SpiderUnitDrawHook, true);
-vehicle_draw!(hooked_segmented_unit_draw, SegmentedUnitDrawHook, true);
-vehicle_draw!(hooked_segment_draw, SegmentDrawHook, true);
-vehicle_draw!(hooked_combat_robot_draw, CombatRobotDrawHook, true);
+vehicle_draw!(hooked_unit_draw, UnitDrawHook, true, false);
+vehicle_draw!(hooked_spider_unit_draw, SpiderUnitDrawHook, true, false);
+vehicle_draw!(hooked_segmented_unit_draw, SegmentedUnitDrawHook, true, false);
+vehicle_draw!(hooked_segment_draw, SegmentDrawHook, true, false);
+vehicle_draw!(hooked_combat_robot_draw, CombatRobotDrawHook, false, true);
+// flying logistic/construction robots
+vehicle_draw!(hooked_logistic_robot_draw, LogisticRobotDrawHook, false, true);
+vehicle_draw!(hooked_construction_robot_draw, ConstructionRobotDrawHook, false, true);
 
 // player + vehicle/unit draw hooks
 pub fn install_actors(symbols: &SymbolMap, base: usize) -> Result<()> {
@@ -130,6 +143,25 @@ pub fn install_actors(symbols: &SymbolMap, base: usize) -> Result<()> {
         unsafe {
             let target: FnEntityDraw = std::mem::transmute(addr);
             hook.initialize(target, detour)?.enable()?;
+        }
+    }
+
+    // flying robots: name-only resolve, skip if the symbol is missing (their
+    // rva is unknown, so we must never fall back to a guessed address)
+    let robots: [(&GameFn, &'static EntityDrawDetour, fn(_, _)); 2] = [
+        (&offsets::LOGISTIC_ROBOT_DRAW, &LogisticRobotDrawHook, hooked_logistic_robot_draw),
+        (&offsets::CONSTRUCTION_ROBOT_DRAW, &ConstructionRobotDrawHook, hooked_construction_robot_draw),
+    ];
+    for (gf, hook, detour) in robots {
+        match super::resolve_opt(symbols, gf) {
+            Some(addr) => unsafe {
+                let target: FnEntityDraw = std::mem::transmute(addr);
+                hook.initialize(target, detour)?.enable()?;
+            },
+            None => log::warn!(
+                "robot draw symbol '{}' not in pdb — those bots stay flat (find the real name with pdb-explorer)",
+                gf.symbol
+            ),
         }
     }
     Ok(())

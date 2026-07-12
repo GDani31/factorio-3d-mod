@@ -25,6 +25,11 @@ pub const ELEVATED_LIFT_TILES: f32 = 3.0;
 // height of the wire plane (tiles, roughly pole-connection height)
 pub const WIRE_LIFT_TILES: f32 = 3.8;
 
+// flying robots (logistic/construction bots): billboards lifted into the air
+// and shifted south (their sprite sits above the shadow, like the wire trick)
+pub const BOT_LIFT_TILES: f32 = 2.5;
+pub const BOT_SOUTH_TILES: f32 = 1.0;
+
 // direction sprites rotate to face the camera. +1.0 is correct: a standing
 // entity keeps facing the same world direction, so its frame steps the same
 // way the ground turns on screen

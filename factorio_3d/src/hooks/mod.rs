@@ -46,8 +46,10 @@ thread_local! {
     // rotation hooks (the same functions are also called from simulation
     // code, where rotating would corrupt game state)
     pub static IN_RENDER_PREPARE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
-    // sprites recorded inside this are laid flat (thrusters, inserter arms)
+    // sprites recorded inside this are laid flat (thrusters)
     pub static IN_FLAT_DRAW: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    // sprites recorded inside this are flying robots (lifted + shifted south)
+    pub static IN_FLY_DRAW: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     // depth counter while an enemy/unit draw runs (screen-bottom anchored)
     pub static IN_UNIT_DRAW: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
     // depth counter for static direction-based entity draws (splitter,
@@ -76,6 +78,18 @@ pub(crate) fn resolve(symbols: &SymbolMap, base: usize, gf: &GameFn) -> usize {
         );
     }
     base + gf.rva
+}
+
+// like resolve, but by pdb name ONLY — returns None if the symbol is absent
+// (no rva fallback). used for optional hooks that must not guess an address.
+pub(crate) fn resolve_opt(symbols: &SymbolMap, gf: &GameFn) -> Option<usize> {
+    if gf.symbol.is_empty() {
+        return None;
+    }
+    symbols.iter().find(|(n, _)| n.contains(gf.symbol)).map(|(name, addr)| {
+        log::info!("resolved {} -> {name} @ 0x{addr:X}", gf.symbol);
+        *addr
+    })
 }
 
 // install every hook. order matters only for the marked groups

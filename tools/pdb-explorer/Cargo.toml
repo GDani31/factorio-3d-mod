@@ -1,0 +1,14 @@
+[package]
+name = "pdb-explorer"
+version = "0.1.0"
+edition = "2024"
+description = "Tool to explore Factorio's PDB symbols and find render-related functions"
+
+[[bin]]
+name = "pdb-explorer"
+path = "src/main.rs"
+
+[dependencies]
+pdb = "0.8"
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }

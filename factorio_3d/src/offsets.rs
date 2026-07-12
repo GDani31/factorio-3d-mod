@@ -83,6 +83,12 @@ pub const SEGMENTED_UNIT_DRAW: GameFn =
 pub const SEGMENT_DRAW: GameFn = f("?draw@Segment@@UEBAXAEAVDrawQueue@@@Z", 0x00572F80);
 pub const COMBAT_ROBOT_DRAW: GameFn = f("?draw@CombatRobot@@UEBAXAEAVDrawQueue@@@Z", 0x00391240);
 pub const THRUSTER_DRAW: GameFn = f("?draw@Thruster@@UEBAXAEAVDrawQueue@@@Z", 0x005346C0);
+// flying robots — resolved by name only (no fallback rva); if the symbol is
+// absent the hook is skipped. run tools/pdb-explorer to find the real name if
+// these guesses miss.
+pub const LOGISTIC_ROBOT_DRAW: GameFn = f("?draw@LogisticRobot@@UEBAXAEAVDrawQueue@@@Z", 0);
+pub const CONSTRUCTION_ROBOT_DRAW: GameFn =
+    f("?draw@ConstructionRobot@@UEBAXAEAVDrawQueue@@@Z", 0);
 
 // --- direction-based entity draws (direction byte rotated during draw) -------
 pub const SPLITTER_DRAW_BASE: GameFn = f("?drawBase@Splitter@@", 0x00528CE0);
@@ -134,6 +140,8 @@ pub const ALL: &[&GameFn] = &[
     &SEGMENTED_UNIT_DRAW,
     &SEGMENT_DRAW,
     &COMBAT_ROBOT_DRAW,
+    &LOGISTIC_ROBOT_DRAW,
+    &CONSTRUCTION_ROBOT_DRAW,
     &THRUSTER_DRAW,
     &SPLITTER_DRAW_BASE,
     &LANE_SPLITTER_DRAW_BASE,
