@@ -29,7 +29,7 @@ static LAST_MOUSE_X: AtomicI32 = AtomicI32::new(0);
 static LAST_MOUSE_Y: AtomicI32 = AtomicI32::new(0);
 static MOUSE_TRACKING: AtomicBool = AtomicBool::new(false);
 static SCROLL_ACCUM: AtomicI32 = AtomicI32::new(0);
-static ALT_RMB_DOWN: AtomicBool = AtomicBool::new(false);
+static ALTGR_DOWN: AtomicBool = AtomicBool::new(false);
 static ORIG_WNDPROC: AtomicI64 = AtomicI64::new(0);
 static HOOK_INSTALLED: AtomicBool = AtomicBool::new(false);
 // game window handle from the swapchain (title search fails in fullscreen)
@@ -121,21 +121,20 @@ pub fn poll() {
     ensure_scroll_hook();
 
     let shift = key_held(0x10);
-    let alt = key_held(0x12);
     let rmb = key_held(0x02);
     let mmb = key_held(0x04);
     // shift prevents factorio's own right-click action; mmb alone also rotates
     let rotate_active = (shift && rmb) || mmb;
 
-    // alt + right-click snaps the view back to top-down vanilla (edge-triggered
-    // so one click resets once). works in first person too.
-    let alt_rmb = alt && rmb;
-    if alt_rmb && !ALT_RMB_DOWN.swap(true, Ordering::Relaxed) {
+    // altgr (right alt) snaps the view back to top-down vanilla (edge-triggered
+    // so one press resets once). works in first person too.
+    let altgr = key_held(0xA5);
+    if altgr && !ALTGR_DOWN.swap(true, Ordering::Relaxed) {
         reset_view();
         return;
     }
-    if !alt_rmb {
-        ALT_RMB_DOWN.store(false, Ordering::Relaxed);
+    if !altgr {
+        ALTGR_DOWN.store(false, Ordering::Relaxed);
     }
 
     if FPS_MODE.load(Ordering::Relaxed) {
