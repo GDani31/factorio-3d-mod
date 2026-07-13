@@ -107,6 +107,8 @@ pub const UG_BELT_DRAW_BASE: GameFn = f("?drawBase@UndergroundBelt@@", 0x005589E
 pub const INSERTER_DRAW: GameFn = f("?draw@Inserter@@UEBAXAEAVDrawQueue@@@Z", 0x0042DF50);
 pub const PIPE_TO_GROUND_DRAW: GameFn = f("?draw@PipeToGround@@UEBAXAEAVDrawQueue@@@Z", 0x004830C0);
 pub const PIPE_DRAW: GameFn = f("?draw@Pipe@@UEBAXAEAVDrawQueue@@@Z", 0x00480D10);
+// walls pick their piece from a neighbor mask rotated during draw (like pipes)
+pub const WALL_DRAW: GameFn = f("?draw@Wall@@UEBAXAEAVDrawQueue@@@Z", 0x0056D740);
 // pauses draw-time direction edits while the map serializes (desync guard)
 pub const MAP_SAVE: GameFn = f("?save@Map@@QEBAXAEAVMapSerialiser@@", 0x00B5ED30);
 
@@ -163,6 +165,7 @@ pub const ALL: &[&GameFn] = &[
     &INSERTER_DRAW,
     &PIPE_TO_GROUND_DRAW,
     &PIPE_DRAW,
+    &WALL_DRAW,
     &MAP_SAVE,
     &RS_DIR_PIC_INDEX,
     &ARI_FRAME_INDEX,
@@ -201,3 +204,5 @@ pub const PARAM_SIZE_Y: usize = 0x3C; // f32, sprite px size
 pub const TBC_DIR_OFF: usize = 0x128;
 // direction byte inside Inserter / PipeToGround
 pub const INSERTER_DIR_OFF: usize = 0x1D8;
+// wall neighbor connection mask (bits: e=1 s=2 w=4 n=8, compass-cyclic)
+pub const WALL_CONN_MASK_OFF: usize = 0xD9;

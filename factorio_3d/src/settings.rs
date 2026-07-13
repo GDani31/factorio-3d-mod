@@ -7,8 +7,9 @@ pub const HORIZON_BOOST: bool = true;
 // raised for a bigger view — the far field gets blurrier (game LOD wall)
 pub const TARGET_SPAN_TILES: f64 = 300.0;
 
-// cap on the zoom-out boost factor. higher = deeper horizon but blurrier
-pub const MAX_ZOOM_BOOST: f64 = 5.0;
+// cap on the zoom-out boost factor. must stay <= HI_SUPER * MAX_HI_GRID (4)
+// or the hi-res tiles can't cover the view and the edges go low-res pixel mush
+pub const MAX_ZOOM_BOOST: f64 = 4.0;
 
 // hard cap on the boosted world span (tiles)
 pub const MAX_BOOST_SPAN_TILES: f64 = 550.0;
@@ -36,13 +37,15 @@ pub const CRANE_SOUTH_TILES: f32 = 1.0;
 
 // sky (the background the tilted canvas doesn't cover). per planet: day rgb +
 // night rgb; the current darkness (0 day .. 1 night) blends day -> night.
-// planet ids: 0 nauvis, 1 vulcanus, 2 fulgora, 3 gleba, 4 aquilo (else nauvis)
+// planet ids: 0 nauvis, 1 vulcanus, 2 fulgora, 3 gleba, 4 aquilo,
+// 5 space platform (else nauvis)
 pub fn sky_day_night(planet: u8) -> ([f32; 3], [f32; 3]) {
     match planet {
         1 => ([0.16, 0.09, 0.05], [0.05, 0.03, 0.02]), // vulcanus dark brown
         2 => ([0.14, 0.06, 0.18], [0.05, 0.02, 0.08]), // fulgora dark purple
         3 => ([0.10, 0.20, 0.16], [0.03, 0.07, 0.06]), // gleba blue-greenish
         4 => ([0.06, 0.10, 0.18], [0.02, 0.04, 0.08]), // aquilo dark blue
+        5 => ([0.0, 0.0, 0.0], [0.0, 0.0, 0.0]),       // space is just black
         _ => ([0.32, 0.52, 0.85], [0.02, 0.03, 0.07]), // nauvis blue day / dark night
     }
 }

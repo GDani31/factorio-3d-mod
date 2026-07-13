@@ -46,6 +46,7 @@ static_detour! {
     static PipeToGroundDrawHook: unsafe extern "C" fn(*mut core::ffi::c_void, *mut core::ffi::c_void);
     static PipeDrawHook: unsafe extern "C" fn(*mut core::ffi::c_void, *mut core::ffi::c_void);
     static ThrusterDrawHook: unsafe extern "C" fn(*mut core::ffi::c_void, *mut core::ffi::c_void);
+    static WallDrawHook: unsafe extern "C" fn(*mut core::ffi::c_void, *mut core::ffi::c_void);
     static SolarPanelDrawHook: unsafe extern "C" fn(*mut core::ffi::c_void, *mut core::ffi::c_void);
     static RocketSiloDrawHook: unsafe extern "C" fn(*mut core::ffi::c_void, *mut core::ffi::c_void);
     static MapSaveHook: unsafe extern "C" fn(*mut core::ffi::c_void, *mut core::ffi::c_void, *mut core::ffi::c_void);
@@ -214,6 +215,30 @@ directional_draw!(hooked_pipe_to_ground_draw, PipeToGroundDrawHook, Some(offsets
 // this bracket only provides the draw-phase flag that opens that shim's gate
 directional_draw!(hooked_pipe_draw, PipeDrawHook, None);
 
+// walls pick their piece from the 4-bit neighbor mask at +0xD9 — rotate it
+// by the camera quadrant for the draw, restore after (same idea as pipes)
+fn hooked_wall_draw(this: *mut core::ffi::c_void, queue: *mut core::ffi::c_void) {
+    super::STATIC_DRAW_DEPTH.with(|d| d.set(d.get() + 1));
+    let q = super::rotation::dir_rot_steps() as u32;
+    let mut restore: Option<u8> = None;
+    if q != 0 && !this.is_null() && !SAVE_ACTIVE.load(Ordering::SeqCst) {
+        unsafe {
+            let ptr = (this as *const u8).add(offsets::WALL_CONN_MASK_OFF) as *mut u8;
+            let d = std::ptr::read(ptr);
+            let m = (d & 0x0F) as u32;
+            std::ptr::write(ptr, (((m << q) | (m >> (4 - q))) & 0xF) as u8 | (d & 0xF0));
+            restore = Some(d);
+        }
+    }
+    unsafe { WallDrawHook.call(this, queue) }
+    if let Some(d) = restore {
+        unsafe {
+            std::ptr::write((this as *const u8).add(offsets::WALL_CONN_MASK_OFF) as *mut u8, d)
+        };
+    }
+    super::STATIC_DRAW_DEPTH.with(|d| d.set(d.get().saturating_sub(1)));
+}
+
 // thrusters lie on the platform floor — record their sprites as flat quads
 fn hooked_thruster_draw(this: *mut core::ffi::c_void, queue: *mut core::ffi::c_void) {
     super::IN_FLAT_DRAW.with(|f| f.set(true));
@@ -249,13 +274,14 @@ fn hooked_map_save(
 // direction-based draw hooks. entity draws are hot on the prepare path, so
 // the detours are enabled with all other threads suspended
 pub fn install_directional(symbols: &SymbolMap, base: usize) -> Result<()> {
-    let targets: [(&GameFn, &'static EntityDrawDetour, fn(_, _)); 9] = [
+    let targets: [(&GameFn, &'static EntityDrawDetour, fn(_, _)); 10] = [
         (&offsets::SPLITTER_DRAW_BASE, &SplitterDrawBaseHook, hooked_splitter_draw_base as fn(_, _)),
         (&offsets::LANE_SPLITTER_DRAW_BASE, &LaneSplitterDrawBaseHook, hooked_lane_splitter_draw_base),
         (&offsets::UG_BELT_DRAW_BASE, &UgBeltDrawBaseHook, hooked_ug_belt_draw_base),
         (&offsets::INSERTER_DRAW, &InserterDrawHook, hooked_inserter_draw),
         (&offsets::PIPE_TO_GROUND_DRAW, &PipeToGroundDrawHook, hooked_pipe_to_ground_draw),
         (&offsets::PIPE_DRAW, &PipeDrawHook, hooked_pipe_draw),
+        (&offsets::WALL_DRAW, &WallDrawHook, hooked_wall_draw),
         (&offsets::THRUSTER_DRAW, &ThrusterDrawHook, hooked_thruster_draw),
         (&offsets::SOLAR_PANEL_DRAW, &SolarPanelDrawHook, hooked_solar_panel_draw),
         (&offsets::ROCKET_SILO_DRAW, &RocketSiloDrawHook, hooked_rocket_silo_draw),

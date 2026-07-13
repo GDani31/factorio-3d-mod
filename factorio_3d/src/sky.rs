@@ -134,13 +134,15 @@ fn classify_surface(surface: *mut core::ffi::c_void) -> Option<u8> {
     }
     buf.truncate(read);
 
-    // distinctive names first
-    const NAMES: [(&[u8], u8); 5] = [
+    // distinctive names first; platform last so real planets win
+    // (space platform surfaces are named "platform-N")
+    const NAMES: [(&[u8], u8); 6] = [
         (b"vulcanus", 1),
         (b"fulgora", 2),
         (b"gleba", 3),
         (b"aquilo", 4),
         (b"nauvis", 0),
+        (b"platform", 5),
     ];
     for (needle, id) in NAMES {
         if buf.windows(needle.len()).any(|w| w == needle) {
