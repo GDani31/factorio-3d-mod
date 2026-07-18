@@ -2,6 +2,9 @@
 
 A 3D mod for Factorio.
 
+![screenshot](screenshots/1.png)
+![screenshot](screenshots/2.png)
+
 ## Install
 
 1. Grab the latest zip from the [Releases](../../releases) tab.
