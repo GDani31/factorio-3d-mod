@@ -1,0 +1,4 @@
+[workspace]
+resolver = "2"
+members = ["factorio_3d_models", "injector"]
+exclude = ["tools/glb-viewer"]

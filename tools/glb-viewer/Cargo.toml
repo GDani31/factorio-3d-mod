@@ -1,0 +1,25 @@
+[package]
+name = "glb-viewer"
+version = "0.1.0"
+edition = "2021"
+
+# standalone: not part of the mod workspace. build with:
+#   cargo build --release   (from this folder)
+# run with:
+#   cargo run --release -- ..\..\assembler.glb
+
+[dependencies]
+anyhow = "1"
+glam = "0.29"
+gltf = { version = "1", features = ["import", "utils", "names"] }
+windows = { version = "0.58", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Direct3D",
+    "Win32_Graphics_Direct3D11",
+    "Win32_Graphics_Direct3D_Fxc",
+    "Win32_Graphics_Dxgi",
+    "Win32_Graphics_Dxgi_Common",
+    "Win32_Graphics_Gdi",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_System_LibraryLoader",
+] }

@@ -1,0 +1,8 @@
+target/
+*.blend
+*.blend1
+__pycache__/
+
+# stray dev-test exports at the repo root (the real tree is models/)
+/assembler.glb
+/AssemblerProjTest.glb
