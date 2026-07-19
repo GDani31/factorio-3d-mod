@@ -123,14 +123,53 @@ pub struct NodeData {
     pub is_track: bool,
     pub is_wheel: bool,
     pub wheel_radius: f32, // model units, from the node's mesh (0 = no mesh)
+    // spidertron rig role from the node name (Body / LegN_Upper/Lower/Foot)
+    pub spider: SpiderRole,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum SpiderRole {
+    None,
+    Body,            // torso node — yawed by the head orientation
+    Leg(u8, LegSeg), // leg 0..7, segment
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum LegSeg {
+    Upper, // hip -> knee
+    Lower, // knee -> foot
+    Foot,  // foot-tip marker
+}
+
+// one leg's rest geometry in model space
+#[derive(Clone, Copy)]
+pub struct SpiderLegRig {
+    pub upper: usize,
+    pub lower: usize,
+    pub root: usize, // parent of upper
+    pub hip: Vec3,
+    pub knee: Vec3,
+    pub foot: Vec3,
+    pub l1: f32, // hip->knee
+    pub l2: f32, // knee->foot
+    pub pole: Vec3, // rest bend direction
+}
+
+// torso node + 8 legs; only on the spidertron model
+#[derive(Clone)]
+pub struct SpiderRig {
+    pub body: Option<usize>,
+    pub legs: Vec<SpiderLegRig>,
 }
 
 // live per-instance overrides applied on top of the sampled animation
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Default)]
 pub struct Pose {
     pub turret_yaw: f32,    // radians around the turret node's local up
     pub track_offset: f32,  // model units along the track node's local z
     pub wheel_advance: f32, // model units driven -> wheel angle via radius
+    // per-node local override (spidertron torso + IK'd legs); len == nodes
+    pub node_locals: Option<std::sync::Arc<Vec<Option<Mat4>>>>,
 }
 
 // the chain loop midline (track_path.json next to the glb): chain vertices
@@ -164,11 +203,21 @@ pub struct ModelData {
     // any turret/track/wheel node present — only then is the posed path worth it
     pub has_pose_nodes: bool,
     pub track_path: Option<TrackPath>,
+    pub spider: Option<SpiderRig>, // torso + 8 IK legs; None for other models
 }
 
 fn compute_node_worlds(nodes: &[NodeData], t: f32, pose: &Pose) -> Vec<Mat4> {
     let mut out = Vec::with_capacity(nodes.len());
-    for n in nodes {
+    for (i, n) in nodes.iter().enumerate() {
+        // spidertron: a full local override wins over the flag-based nudges
+        if let Some(ov) = pose.node_locals.as_ref().and_then(|l| l[i]) {
+            let world = match n.parent {
+                Some(p) => out[p] * ov,
+                None => ov,
+            };
+            out.push(world);
+            continue;
+        }
         let mut local = n.local(t);
         // post-multiplied: rotates/moves in the node's own object frame,
         // same as transforming the object locally in blender
@@ -249,6 +298,7 @@ pub fn load(path: &Path) -> anyhow::Result<ModelData> {
             // road wheels only — "wheelsframes"/"wheelssuspensions" stay put
             is_wheel: lname == "wheels" || lname.starts_with("wheels."),
             wheel_radius: 0.0,
+            spider: parse_spider_role(&lname),
         });
         // "scorch" nodes are baked ground-burn decals; their alpha map is
         // lost in the jpg textures so they'd render as solid black slabs
@@ -355,6 +405,7 @@ pub fn load(path: &Path) -> anyhow::Result<ModelData> {
 
     // rest-pose transforms, for the bounds pass below
     let rest_worlds = compute_node_worlds(&nodes, 0.0, &Pose::default());
+    let spider = build_spider_rig(&nodes, &rest_worlds);
     let rest_skin_mats: Vec<Vec<Mat4>> =
         skins.iter().map(|s| compute_skin_matrices(s, &rest_worlds)).collect();
     let flip = Vec3::new(1.0, 1.0, -1.0);
@@ -372,7 +423,9 @@ pub fn load(path: &Path) -> anyhow::Result<ModelData> {
             && n.s_anim.is_none()
             && !n.is_turret
             && !n.is_track
-            && !n.is_wheel;
+            && !n.is_wheel
+            // spidertron torso + legs are posed at runtime, keep them un-merged
+            && n.spider == SpiderRole::None;
         node_static[i] = still && n.parent.is_none_or(|p| node_static[p]);
     }
 
@@ -617,6 +670,7 @@ pub fn load(path: &Path) -> anyhow::Result<ModelData> {
             is_track: false,
             is_wheel: false,
             wheel_radius: 0.0,
+            spider: SpiderRole::None,
         });
         let n_groups = groups.len();
         for (_, g) in groups {
@@ -654,7 +708,8 @@ pub fn load(path: &Path) -> anyhow::Result<ModelData> {
     if aabb_min.x > aabb_max.x {
         anyhow::bail!("empty bounds");
     }
-    let has_pose_nodes = nodes.iter().any(|n| n.is_turret || n.is_track || n.is_wheel);
+    let has_pose_nodes =
+        nodes.iter().any(|n| n.is_turret || n.is_track || n.is_wheel) || spider.is_some();
     let track_path = if nodes.iter().any(|n| n.is_track) { load_track_path(path) } else { None };
     Ok(ModelData {
         nodes,
@@ -666,7 +721,198 @@ pub fn load(path: &Path) -> anyhow::Result<ModelData> {
         aabb_max,
         has_pose_nodes,
         track_path,
+        spider,
     })
+}
+
+// node name (already lowercased) -> rig role: body, legN_upper/lower/foot
+fn parse_spider_role(lname: &str) -> SpiderRole {
+    if lname == "body" {
+        return SpiderRole::Body;
+    }
+    if let Some(rest) = lname.strip_prefix("leg") {
+        // "0_upper" -> (0, Upper)
+        if let Some((idx, seg)) = rest.split_once('_') {
+            if let Ok(i) = idx.parse::<u8>() {
+                let seg = match seg {
+                    "upper" => Some(LegSeg::Upper),
+                    "lower" => Some(LegSeg::Lower),
+                    "foot" => Some(LegSeg::Foot),
+                    _ => None,
+                };
+                if let Some(s) = seg {
+                    if i < 8 {
+                        return SpiderRole::Leg(i, s);
+                    }
+                }
+            }
+        }
+    }
+    SpiderRole::None
+}
+
+// build the rig from the tagged nodes + their rest world positions
+fn build_spider_rig(nodes: &[NodeData], rest: &[Mat4]) -> Option<SpiderRig> {
+    let mut body = None;
+    let mut upper = [usize::MAX; 8];
+    let mut lower = [usize::MAX; 8];
+    let mut foot = [usize::MAX; 8];
+    let mut any = false;
+    for (i, n) in nodes.iter().enumerate() {
+        match n.spider {
+            SpiderRole::Body => body = Some(i),
+            SpiderRole::Leg(l, LegSeg::Upper) => {
+                upper[l as usize] = i;
+                any = true;
+            }
+            SpiderRole::Leg(l, LegSeg::Lower) => lower[l as usize] = i,
+            SpiderRole::Leg(l, LegSeg::Foot) => foot[l as usize] = i,
+            SpiderRole::None => {}
+        }
+    }
+    if !any {
+        return None;
+    }
+    let pos = |idx: usize| rest[idx].w_axis.truncate();
+    let mut legs = Vec::new();
+    for l in 0..8 {
+        let (u, lo, ft) = (upper[l], lower[l], foot[l]);
+        if u == usize::MAX || lo == usize::MAX || ft == usize::MAX {
+            continue;
+        }
+        let (hip, knee, foot_p) = (pos(u), pos(lo), pos(ft));
+        let l1 = (knee - hip).length();
+        let l2 = (foot_p - knee).length();
+        if l1 < 1e-4 || l2 < 1e-4 {
+            continue;
+        }
+        // bend direction: knee offset from the hip->foot line
+        let axis = (foot_p - hip).normalize_or_zero();
+        let pole = {
+            let v = knee - hip;
+            let perp = v - axis * v.dot(axis);
+            perp.normalize_or_zero()
+        };
+        legs.push(SpiderLegRig {
+            upper: u,
+            lower: lo,
+            root: nodes[u].parent.unwrap_or(u),
+            hip,
+            knee,
+            foot: foot_p,
+            l1,
+            l2,
+            pole,
+        });
+    }
+    if legs.is_empty() {
+        return None;
+    }
+    Some(SpiderRig { body, legs })
+}
+
+impl SpiderRig {
+    // per-node local overrides for one instance: torso yaw + each leg's IK to
+    // its model-space foot target (None = leave that leg at rest)
+    pub fn pose_locals(
+        &self,
+        nodes: &[NodeData],
+        rest: &[Mat4],
+        body_yaw: f32,
+        targets: &[Option<Vec3>; 8],
+    ) -> Vec<Option<Mat4>> {
+        let mut locals: Vec<Option<Mat4>> = vec![None; nodes.len()];
+        // torso: yaw about the node's local up
+        if let Some(b) = self.body {
+            let parent = nodes[b].parent.map(|p| rest[p]).unwrap_or(Mat4::IDENTITY);
+            let rest_local = parent.inverse() * rest[b];
+            locals[b] = Some(rest_local * Mat4::from_quat(Quat::from_rotation_y(body_yaw)));
+        }
+        // the game's leg order != the model's Leg0..7, so match each leg to the
+        // foot with the nearest azimuth (xz plane). walk legs in azimuth order
+        // so the greedy match doesn't steal a neighbour's foot
+        let az = |v: Vec3| v.z.atan2(v.x);
+        let angdiff = |a: f32, b: f32| {
+            let d = (a - b).rem_euclid(std::f32::consts::TAU);
+            d.min(std::f32::consts::TAU - d)
+        };
+        let tgt_az: Vec<Option<f32>> = targets.iter().map(|t| t.map(az)).collect();
+        let mut order: Vec<usize> = (0..self.legs.len()).collect();
+        order.sort_by(|&a, &b| {
+            az(self.legs[a].hip).partial_cmp(&az(self.legs[b].hip)).unwrap()
+        });
+        let mut used = [false; 8];
+        for li in order {
+            let leg = &self.legs[li];
+            let la = az(leg.hip);
+            let mut best: Option<usize> = None;
+            let mut bestd = f32::MAX;
+            for (ti, ta) in tgt_az.iter().enumerate() {
+                if used[ti] {
+                    continue;
+                }
+                if let Some(ta) = ta {
+                    let d = angdiff(la, *ta);
+                    if d < bestd {
+                        bestd = d;
+                        best = Some(ti);
+                    }
+                }
+            }
+            let Some(ti) = best else { continue };
+            used[ti] = true;
+            let target = targets[ti].unwrap();
+            let (up_w, lo_w) = solve_leg_ik(leg, rest, target);
+            let root_w = rest[leg.root];
+            locals[leg.upper] = Some(root_w.inverse() * up_w);
+            locals[leg.lower] = Some(up_w.inverse() * lo_w);
+        }
+        locals
+    }
+}
+
+// 2-bone IK: rotate the rest upper/lower subtrees so the foot reaches `target`
+// (model space), aiming each about its joint so bone lengths + mesh offsets hold
+fn solve_leg_ik(leg: &SpiderLegRig, rest: &[Mat4], target: Vec3) -> (Mat4, Mat4) {
+    let h = leg.hip;
+    let dir = target - h;
+    let dist = dir
+        .length()
+        .clamp((leg.l1 - leg.l2).abs() + 1e-3, leg.l1 + leg.l2 - 1e-3);
+    let dir_n = dir.normalize_or_zero();
+    // law of cosines: knee sits `a` along hip->target, `hgt` off the line
+    let a = (dist * dist + leg.l1 * leg.l1 - leg.l2 * leg.l2) / (2.0 * dist);
+    let hgt = (leg.l1 * leg.l1 - a * a).max(0.0).sqrt();
+    let mut pole = leg.pole - dir_n * leg.pole.dot(dir_n);
+    if pole.length() < 1e-4 {
+        pole = (leg.knee - leg.hip) - dir_n * (leg.knee - leg.hip).dot(dir_n);
+    }
+    let pole = pole.normalize_or_zero();
+    let knee_new = h + dir_n * a + pole * hgt;
+    // upper: aim the rest subtree about the hip at knee_new
+    let r_up = Quat::from_rotation_arc(
+        (leg.knee - h).normalize_or_zero(),
+        (knee_new - h).normalize_or_zero(),
+    );
+    let up_w = Mat4::from_translation(h)
+        * Mat4::from_quat(r_up)
+        * Mat4::from_translation(-h)
+        * rest[leg.upper];
+    // lower: aim the (now hip-rotated) shin at the target about knee_new
+    let lo_moved = Mat4::from_translation(h)
+        * Mat4::from_quat(r_up)
+        * Mat4::from_translation(-h)
+        * rest[leg.lower];
+    let shin_rest = r_up * (leg.foot - leg.knee);
+    let r_lo = Quat::from_rotation_arc(
+        shin_rest.normalize_or_zero(),
+        (target - knee_new).normalize_or_zero(),
+    );
+    let lo_w = Mat4::from_translation(knee_new)
+        * Mat4::from_quat(r_lo)
+        * Mat4::from_translation(-knee_new)
+        * lo_moved;
+    (up_w, lo_w)
 }
 
 // optional chain loop path next to the glb (see TrackPath)

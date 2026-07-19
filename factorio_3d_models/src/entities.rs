@@ -76,6 +76,11 @@ struct Entry {
     smooth_y: f32,           // steps at 60UPS and judders against the camera
     speed_ema: f32,          // tiles/sec, paces the run clip
     move_accum: f32,         // seconds since the last position step
+
+    // --- spidertron (is_spider entries only) --------------------------------
+    is_spider: bool,
+    feet: [[f32; 2]; 8],        // raw foot positions (60UPS-stepped), tiles
+    feet_smooth: [[f32; 2]; 8], // ema-smoothed for the render
 }
 
 impl Entry {
@@ -124,6 +129,9 @@ impl Entry {
             smooth_y: r.y,
             speed_ema: 0.0,
             move_accum: 0.0,
+            is_spider: crate::models::is_spider_key(r.model.parts[0].key),
+            feet: r.spider.unwrap_or([[f32::NAN; 2]; 8]),
+            feet_smooth: r.spider.unwrap_or([[f32::NAN; 2]; 8]),
         }
     }
 }
@@ -159,6 +167,14 @@ pub struct Instance {
     // shapekey weight override (gate leaf sinking); None = the glb's own
     // weight animation sampled at anim_t
     pub morph: Option<f32>,
+    // spidertron drive data, boxed so the common Instance stays small
+    pub spider: Option<Box<SpiderInstance>>,
+}
+
+#[derive(Clone)]
+pub struct SpiderInstance {
+    pub torso_yaw: f32,      // radians, from the body orientation
+    pub feet: [[f32; 2]; 8], // world tiles; NAN x = leg unknown
 }
 
 // everything a draw hook knows about the entity it's recording. Record::at
@@ -173,6 +189,8 @@ pub struct Record<'a> {
     pub turret: f32,      // NAN = no relative turret
     pub surface: usize,
     pub fingerprint: u64,
+    // 8 foot world positions, set only by the SpiderVehicle::draw hook
+    pub spider: Option<[[f32; 2]; 8]>,
 }
 
 impl<'a> Record<'a> {
@@ -187,6 +205,7 @@ impl<'a> Record<'a> {
             turret: f32::NAN,
             surface: 0,
             fingerprint: 0,
+            spider: None,
         }
     }
 }
@@ -601,6 +620,9 @@ pub fn record(r: Record) -> bool {
     e.turret = r.turret;
     if r.surface != 0 {
         e.surface = r.surface;
+    }
+    if let Some(feet) = r.spider {
+        e.feet = feet;
     }
 
     // connectable entities register in the neighbor grid. always show:
@@ -1257,6 +1279,54 @@ fn update_robot(e: &mut Entry, frame: u64) {
     }
 }
 
+// smooth the body + every foot (the game fields step at 60UPS, see
+// project_3d_models_stutter); a big move snaps, small drift eases
+fn update_spider(e: &mut Entry) {
+    let k = tuning::SPIDER_SMOOTH.get().clamp(0.05, 1.0);
+    let snap = |cur: &mut f32, tgt: f32| {
+        if !tgt.is_finite() {
+            return;
+        }
+        if !cur.is_finite() || (tgt - *cur).abs() > 4.0 {
+            *cur = tgt;
+        } else {
+            *cur += (tgt - *cur) * k;
+        }
+    };
+    snap(&mut e.smooth_x, e.x);
+    snap(&mut e.smooth_y, e.y);
+    for i in 0..8 {
+        for a in 0..2 {
+            snap(&mut e.feet_smooth[i][a], e.feet[i][a]);
+        }
+    }
+}
+
+// one instance at the (smoothed) body, world-aligned (legs are world-locked, so
+// the base never yaws); the torso yaw + feet ride in the payload, IK in renderer
+fn spider_instances(e: &Entry, out: &mut Vec<Instance>) {
+    let key = e.model.parts[0].key;
+    let flip = if tuning::SPIDER_TORSO_FLIP.get() > 0.5 { -1.0 } else { 1.0 };
+    let torso_yaw = if e.orientation.is_finite() {
+        -orientation_to_yaw(e.orientation) * flip + tuning::SPIDER_TORSO_YAW.get().to_radians()
+    } else {
+        0.0
+    };
+    let poff = tuning::model_offset_extra(key);
+    out.push(Instance {
+        key,
+        scale_ref: key,
+        tiles: tuning::SPIDER_SIZE.get(),
+        x: e.smooth_x + poff[0],
+        y: e.smooth_y + poff[1],
+        lift: poff[2], // base lift computed in the renderer
+        yaw: tuning::model_yaw_extra(key),
+        active: true,
+        spider: Some(Box::new(SpiderInstance { torso_yaw, feet: e.feet_smooth })),
+        ..Instance::default()
+    });
+}
+
 // regular (non-connectable) entity: one instance per model part
 fn entity_instances(e: &Entry, frame: u64, out: &mut Vec<Instance>) {
     let scale_ref = e.model.parts[0].key;
@@ -1515,6 +1585,11 @@ pub fn tick(dt: f32, view_rect: (f32, f32, f32, f32)) -> Vec<Instance> {
             }
             update_player(e, frame, dt, &grid);
             entity_instances(e, frame, &mut out);
+            continue;
+        }
+        if e.is_spider {
+            update_spider(e);
+            spider_instances(e, &mut out);
             continue;
         }
         advance_anim(e, frame, dt);

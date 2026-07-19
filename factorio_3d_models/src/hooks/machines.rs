@@ -43,6 +43,7 @@ static_detour! {
     static DrillDrawHook: unsafe extern "C" fn(*mut core::ffi::c_void, *mut core::ffi::c_void);
     static TurretDrawHook: unsafe extern "C" fn(*mut core::ffi::c_void, *mut core::ffi::c_void);
     static AmmoTurretDrawHook: unsafe extern "C" fn(*mut core::ffi::c_void, *mut core::ffi::c_void);
+    static SpiderDrawHook: unsafe extern "C" fn(*mut core::ffi::c_void, *mut core::ffi::c_void);
     static EntityDtorHook: unsafe extern "C" fn(*mut core::ffi::c_void);
     static DieHook: unsafe extern "C" fn(*mut core::ffi::c_void, usize, usize, usize);
     static RocketDrawHook: unsafe extern "C" fn(*mut core::ffi::c_void, *mut core::ffi::c_void);
@@ -400,6 +401,80 @@ fn hooked_ammo_turret_draw(this: *mut core::ffi::c_void, queue: *mut core::ffi::
     turret_draw_common(this, queue, |t, q| unsafe { AmmoTurretDrawHook.call(t, q) });
 }
 
+// --- the spidertron: body + 8 IK legs --------------------------------------------------
+// suppress SpiderVehicle::draw, take the torso orientation off the entity and
+// the 8 foot positions off the leg list, feed the SpiderRig pose path.
+
+// each SpiderLeg entity is positioned at its foot (+0x50 MapPosition); NAN legs
+// stay in the model's rest pose
+fn read_spider_feet(base: usize) -> [[f32; 2]; 8] {
+    let mut feet = [[f32::NAN; 2]; 8];
+    let (Some(begin), Some(end)) = (
+        mem::try_read::<usize>(base + offsets::SPIDER_LEG_VEC_BEGIN),
+        mem::try_read::<usize>(base + offsets::SPIDER_LEG_VEC_END),
+    ) else {
+        return feet;
+    };
+    if begin == 0 || end <= begin {
+        return feet;
+    }
+    let stride = offsets::SPIDER_LEG_ENTRY_STRIDE;
+    let count = ((end - begin) / stride).min(8);
+    for i in 0..count {
+        let entry = begin + i * stride;
+        let Some(leg) = mem::try_read::<usize>(entry + offsets::SPIDER_LEG_ENTRY_PTR) else {
+            continue;
+        };
+        if leg == 0 {
+            continue;
+        }
+        let (Some(ix), Some(iy)) = (
+            mem::try_read::<i32>(leg + offsets::SPIDER_LEG_FOOT),
+            mem::try_read::<i32>(leg + offsets::SPIDER_LEG_FOOT + 4),
+        ) else {
+            continue;
+        };
+        feet[i] = [ix as f32 / 256.0, iy as f32 / 256.0];
+    }
+    feet
+}
+
+fn hooked_spider_draw(this: *mut core::ffi::c_void, queue: *mut core::ffi::c_void) {
+    let call = |t, q| unsafe { SpiderDrawHook.call(t, q) };
+    let model = if this.is_null() { None } else { getters::entity_model(this) };
+    let Some(model) = model else {
+        call(this, queue);
+        return;
+    };
+    // ghost preview / GUI button: keep the vanilla look, no 3d takeover
+    if dq_is_ghost(queue as usize) || in_gui_preview() {
+        call(this, queue);
+        return;
+    }
+    let Some((x, y)) = getters::entity_pos_field(this) else {
+        call(this, queue);
+        return;
+    };
+    let base = this as usize;
+    // torso ("head") orientation off the entity, feet off the legs
+    let orientation = mem::try_read::<f32>(base + offsets::SPIDER_ORIENTATION)
+        .filter(|v| v.is_finite())
+        .unwrap_or(f32::NAN);
+    let feet = read_spider_feet(base);
+    // movement re-fingerprints the entry so it stays alive
+    let fp = (x.to_bits() as u64) << 32 ^ y.to_bits() as u64 ^ orientation.to_bits() as u64;
+    let suppress = crate::entities::record(Record {
+        orientation,
+        surface: getters::entity_surface(this),
+        fingerprint: fp,
+        spider: Some(feet),
+        ..Record::at(base, &model, x, y)
+    });
+    if !suppress {
+        call(this, queue);
+    }
+}
+
 // --- rocket silo rocket: 3d rocket rising out of the silo -------------------------------
 // the RocketSiloRocket entity exists exactly while a rocket is loaded. its
 // draw calls drawRocketCroppedSprite with a rise offset; we suppress those
@@ -580,6 +655,7 @@ pub fn install(symbols: &SymbolMap, base: usize) -> Result<()> {
         hook!(symbols, base, DrillDrawHook, MINING_DRILL_DRAW, hooked_drill_draw);
         hook!(symbols, base, TurretDrawHook, TURRET_DRAW, hooked_turret_draw);
         hook!(symbols, base, AmmoTurretDrawHook, AMMO_TURRET_DRAW, hooked_ammo_turret_draw);
+        hook!(symbols, base, SpiderDrawHook, SPIDER_VEHICLE_DRAW, hooked_spider_draw);
         hook!(symbols, base, EntityDtorHook, ENTITY_DTOR, hooked_entity_dtor);
         hook!(symbols, base, DieHook, EWH_DIE, hooked_die);
         hook!(symbols, base, DrawCmHook, WV_DRAW_CRAFTING_MACHINE, hooked_draw_cm);
@@ -639,6 +715,7 @@ pub fn install(symbols: &SymbolMap, base: usize) -> Result<()> {
             DrillDrawHook.enable()?;
             TurretDrawHook.enable()?;
             AmmoTurretDrawHook.enable()?;
+            SpiderDrawHook.enable()?;
             EntityDtorHook.enable()?;
             DieHook.enable()?;
             DrawCmHook.enable()?;

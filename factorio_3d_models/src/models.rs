@@ -87,6 +87,11 @@ pub fn is_player_key(key: &str) -> bool {
     key.starts_with("ENTITIES/PLAYER/")
 }
 
+// the spidertron model drives a torso-yaw + 8-leg IK rig (spider_instances)
+pub fn is_spider_key(key: &str) -> bool {
+    key.starts_with("ENTITIES/VEHICLES/spidertron")
+}
+
 // optional variant glb (corner.glb / t.glb / cross.glb next to a straight
 // model): interned key when the file exists, memoized
 pub fn optional_key(rel: &str) -> Option<&'static str> {
@@ -448,6 +453,10 @@ fn resolve_uncached(reg: &Registry, proto_name: &str) -> Option<EntityModel> {
             tiles: 1.0, // real size comes from the PLAYER_SIZE knob at draw time
             kind: ConnKind::None,
         });
+    }
+    // spidertron: one rigged glb (torso + 8 IK legs), size from SPIDER_SIZE
+    if proto_name == "spidertron" || proto_name.ends_with("-spidertron") {
+        return Some(single("ENTITIES/VEHICLES/spidertron/static.glb", ConnKind::None, 5.0));
     }
     // biters: their own glb per size tier, facing driven by smooth orientation
     if let Some((rel, tiles)) = biter_model(proto_name) {

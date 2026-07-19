@@ -579,9 +579,17 @@ impl ModelRenderer {
             } else {
                 Mat4::IDENTITY
             };
-            // no recentering: the model origin is trusted as the entity
-            // center at ground level (silo shafts go below, clipped in PS)
-            let py = inst.lift * view.tile_to_plane;
+            // spidertron floats its body a leg-length up so the rest feet land
+            // at y=0 (SPIDER_LIFT nudges it); others sit at the model origin
+            let spider_rig = inst.spider.as_ref().zip(gm.data.spider.as_ref());
+            let py = if let Some((_, rig)) = spider_rig {
+                let min_foot_y =
+                    rig.legs.iter().map(|l| l.foot.y).fold(f32::INFINITY, f32::min);
+                -fit * min_foot_y
+                    + (inst.lift + tuning::SPIDER_LIFT.get()) * view.tile_to_plane
+            } else {
+                inst.lift * view.tile_to_plane
+            };
             let world = Mat4::from_translation(Vec3::new(px, py, pz))
                 * Mat4::from_scale(Vec3::splat(fit))
                 * yaw
@@ -592,10 +600,39 @@ impl ModelRenderer {
             let posed = gm.data.has_pose_nodes
                 && (inst.turret_yaw != 0.0
                     || inst.track_phase != 0.0
-                    || inst.track_phase_b != 0.0);
+                    || inst.track_phase_b != 0.0
+                    || spider_rig.is_some());
             let mut track_offset = None;
             let (node_worlds, skin_mats) = if inst.anim_t == 0.0 && !posed {
                 (gm.rest_worlds.clone(), gm.rest_skins.clone())
+            } else if let Some((si, rig)) = spider_rig {
+                // map each foot into model space (inverse instance matrix, at
+                // ground y=0); pose_locals IKs the legs + yaws the torso
+                let winv = world.inverse();
+                let reach = tuning::SPIDER_REACH.get();
+                let mut targets = [None; 8];
+                for (i, foot) in si.feet.iter().enumerate() {
+                    if !foot[0].is_finite() {
+                        continue;
+                    }
+                    let (fu, fv) = view.uv(foot[0], foot[1]);
+                    let (pfx, pfz) = view.plane(fu, fv);
+                    let mut m = winv.transform_point3(Vec3::new(pfx, 0.0, pfz));
+                    m.x *= reach;
+                    m.z *= reach;
+                    targets[i] = Some(m);
+                }
+                let locals =
+                    rig.pose_locals(&gm.data.nodes, &gm.rest_worlds, si.torso_yaw, &targets);
+                let pose = crate::gltf_model::Pose {
+                    node_locals: Some(Arc::new(locals)),
+                    ..Default::default()
+                };
+                let worlds = gm.data.node_worlds_posed(0.0, &pose);
+                let skins = (0..gm.data.skins.len())
+                    .map(|s| gm.data.skin_matrices(s, &worlds))
+                    .collect();
+                (Arc::new(worlds), Arc::new(skins))
             } else {
                 // chain scroll: tiles driven -> model units, signed, per side
                 let units_per_tile = ref_extent / inst.tiles.max(0.01);
@@ -617,6 +654,7 @@ impl ModelRenderer {
                 };
                 let wheel_flip = if tuning::TANK_WHEEL_FLIP.get() > 0.5 { -1.0 } else { 1.0 };
                 let pose = crate::gltf_model::Pose {
+                    node_locals: None,
                     turret_yaw: inst.turret_yaw,
                     track_offset: node_scroll,
                     wheel_advance: adv * wheel_flip,

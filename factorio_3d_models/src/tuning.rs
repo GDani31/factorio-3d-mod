@@ -117,6 +117,18 @@ knobs! {
     // still pokes into view. 0 = keep the head
     PLAYER_HEAD_CLIP = 0.78;
 
+    // --- the spidertron ---------------------------------------------------
+    SPIDER_SIZE = 5.0;      // model xz extent fitted to this many tiles
+    SPIDER_SMOOTH = 0.35;   // body + foot render smoothing (raw fields step at
+                            // 60UPS). 1 = raw, lower = smoother/laggier
+    SPIDER_TORSO_FLIP = 0.0; // 1 = reverse the torso ("head") yaw direction
+    SPIDER_TORSO_YAW = 180.0; // extra torso yaw offset, degrees (authored facing)
+    SPIDER_LIFT = 0.0;      // extra body height above the auto-computed lift
+                            // (tiles); the auto lift sits the rest feet on the
+                            // ground, this nudges the whole body up/down
+    SPIDER_REACH = 1.0;     // scales how far the feet sit from the body (1 =
+                            // the game's real foot spread)
+
     // --- model shading (the PBR-ish look) ---------------------------------
     // -1 = auto: follow the game's live darkness (day/night cycle). 0..1 =
     // manual override (0 full day, 1 full night). dims the sun + ambient,

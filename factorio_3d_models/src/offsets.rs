@@ -165,6 +165,23 @@ pub const ENTITY_GET_DIRECTION: GameFn =
 pub const ENTITY_GET_ORIENTATION: GameFn =
     f("?getOrientation@Entity@@UEBA?AVRealOrientation@@XZ", 0x0003E740);
 
+// --- the spidertron ---------------------------------------------------------
+// SpiderVehicle is a body entity plus 8 separate SpiderLeg entities. one hook:
+// place the model at the body, yaw the torso node by the orientation, IK each
+// leg to its foot. offsets verified via tools/frida_spidertron.py.
+pub const SPIDER_VEHICLE_DRAW: GameFn =
+    f("?draw@SpiderVehicle@@UEBAXAEAVDrawQueue@@@Z", 0x0051ECA0);
+
+// SpiderVehicle fields (position is the generic ENTITY_POS_FIELD +0x50):
+pub const SPIDER_ORIENTATION: usize = 0x348; // f32 torso/"head" facing 0..1
+// leg vector<Targeter<SpiderLeg>> inside the embedded SpiderEngine (+0x2c0):
+pub const SPIDER_LEG_VEC_BEGIN: usize = 0x2d0; // begin ptr (engine+0x10)
+pub const SPIDER_LEG_VEC_END: usize = 0x2d8; // end ptr (engine+0x18)
+pub const SPIDER_LEG_ENTRY_STRIDE: usize = 0x20;
+pub const SPIDER_LEG_ENTRY_PTR: usize = 0x08; // SpiderLeg* inside an entry
+// the SpiderLeg entity sits AT its foot, so its ENTITY_POS_FIELD is the foot
+pub const SPIDER_LEG_FOOT: usize = 0x50;
+
 // --- the player character ---------------------------------------------------
 // Character::drawInternal(DrawQueue&, bool latency) — suppressed like the
 // other entity draws; the 3d player model (per-state glbs under
@@ -447,6 +464,7 @@ pub const ALL: &[&GameFn] = &[
     &TURRET_GET_ORIENTATION,
     &ENTITY_GET_DIRECTION,
     &ENTITY_GET_ORIENTATION,
+    &SPIDER_VEHICLE_DRAW,
     &DAYTIME_GET_DARKNESS,
     &CHARACTER_DRAW_INTERNAL,
     &CHARACTER_GET_DIRECTION,
